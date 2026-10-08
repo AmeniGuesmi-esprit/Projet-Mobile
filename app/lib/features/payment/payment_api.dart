@@ -80,13 +80,13 @@ class PaymentApi {
   Future<void> cancel(int id) => _client.deleteJson('/transactions/$id');
 }
 
-/// Parses a French amount field ("12,50" / "12.50" / "12") to cents.
+/// Parses a French-style amount field ("12,50" / "12.50" / "12") to cents.
 int? parseAmountToCents(String input) {
   final cleaned = input.trim().replaceAll(RegExp(r'\s'), '').replaceAll(',', '.');
   if (!RegExp(r'^\d+(\.\d{0,2})?$').hasMatch(cleaned)) return null;
   final parts = cleaned.split('.');
-  final euros = int.tryParse(parts[0]) ?? 0;
+  final units = int.tryParse(parts[0]) ?? 0;
   final centsText = parts.length > 1 ? parts[1].padRight(2, '0') : '00';
-  final cents = euros * 100 + (int.tryParse(centsText) ?? 0);
+  final cents = units * 100 + (int.tryParse(centsText) ?? 0);
   return cents > 0 ? cents : null;
 }

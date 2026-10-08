@@ -34,12 +34,12 @@ void main() {
     expect(find.text('Payé'), findsOneWidget);
   });
 
-  testWidgets('MoneyText formats euros with the French currency pattern',
+  testWidgets('MoneyText formats Tunisian Dinar with the fr_TN pattern',
       (tester) async {
     await tester.pumpWidget(
       const MaterialApp(home: Scaffold(body: MoneyText(2599))),
     );
     expect(find.textContaining('25'), findsWidgets);
-    expect(find.textContaining('€'), findsWidgets);
+    expect(find.textContaining('DT'), findsWidgets);
   });
 }

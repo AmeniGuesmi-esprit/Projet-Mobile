@@ -170,8 +170,8 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                       FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                     ],
                     decoration: const InputDecoration(
-                      labelText: 'Montant (€)',
-                      prefixIcon: Icon(Icons.euro),
+                      labelText: 'Montant (DT)',
+                      prefixIcon: Icon(Icons.payments_outlined),
                     ),
                     validator: (v) {
                       final cents = parseAmountToCents(v ?? '');
