@@ -1,0 +1,58 @@
+# Build
+*.o
+*.so
+*.a
+
+# Dart / Flutter
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.dart/
+*.iml
+.flutter
+
+# Android
+**/android/app/build/
+**/android/local.properties
+**/android/key.properties
+.gradle/
+
+# iOS (unused on this project but keep safe)
+*.ipa
+*.xcworkspace
+Pods/
+
+# Test output
+test/coverage/
+coverage/
+
+# IDEs
+.idea/
+.vscode/settings.json
+*.bak
+*.swp
+*~
+
+# Environment / secrets — NEVER commit
+server/.env
+*.env
+*.pem
+*.key
+
+# Databases (local dev only)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Devin local runtime
+.devin/config.local.json
+
+# OS-specific
+Thumbs.db
+.DS_Store
+desktop.ini

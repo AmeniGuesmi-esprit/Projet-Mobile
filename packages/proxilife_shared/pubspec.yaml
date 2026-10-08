@@ -1,0 +1,15 @@
+name: proxilife_shared
+description: >-
+  Shared enums, validators, transaction state machine and DTOs used by the
+  ProxiLife app and server.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies: {}
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: ^1.24.0
