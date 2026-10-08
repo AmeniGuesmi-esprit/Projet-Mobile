@@ -4,6 +4,9 @@ import '../../core/session/session_controller.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/widgets/empty_state.dart';
+import '../../core/widgets/money_text.dart';
+import '../payment/new_payment_screen.dart';
+import '../payment/payment_methods_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.session});
@@ -52,8 +55,8 @@ class HomeScreen extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: AppSpacing.xxs),
-                  Text(
-                    '${((user?.soldeCentimes ?? 0) / 100).toStringAsFixed(2).replaceAll('.', ',')} €',
+                  MoneyText(
+                    user?.soldeCentimes ?? 0,
                     style: Theme.of(context)
                         .textTheme
                         .displaySmall
@@ -73,6 +76,43 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
+            Row(
+              children: [
+                Expanded(
+                  child: _QuickAction(
+                    icon: Icons.payments_outlined,
+                    label: 'Payer',
+                    color: AppColors.accent,
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute<bool>(
+                          builder: (_) =>
+                              NewPaymentScreen(session: session),
+                        ),
+                      );
+                      await session.refreshUser();
+                    },
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: _QuickAction(
+                    icon: Icons.credit_card,
+                    label: 'Mes moyens',
+                    color: AppColors.primary,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<PaymentMethodsScreen>(
+                          builder: (_) =>
+                              PaymentMethodsScreen(api: session.api),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xl),
             Text('Paiements',
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.sm),
@@ -83,6 +123,56 @@ class HomeScreen extends StatelessWidget {
               color: AppColors.moduleCompte,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickAction extends StatelessWidget {
+  const _QuickAction({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      child: Ink(
+        decoration: BoxDecoration(
+          border: Border.all(color: AppColors.outlineSoft),
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+                vertical: AppSpacing.md, horizontal: AppSpacing.sm),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: color, size: 22),
+                const SizedBox(width: AppSpacing.xs),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: Theme.of(context).textTheme.titleMedium,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
