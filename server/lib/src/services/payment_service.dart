@@ -240,7 +240,7 @@ class PaymentService {
       }
       transactionId = await txn.insert('transaction_', {
         'montant_centimes': montantCentimes,
-        'devise': 'EUR',
+        'devise': 'TND',
         'date': DateTime.now().toIso8601String(),
         'statut': finalStatus.apiValue,
         'type_service': typeService.apiValue,

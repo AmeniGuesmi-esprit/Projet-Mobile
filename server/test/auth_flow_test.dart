@@ -267,16 +267,11 @@ void main() {
     expect(status, 401);
   });
 
-  test('DELETE /users/me requires the password and removes the account',
+  test('DELETE /users/me removes the account (no password required)',
       () async {
     final token = await registerVerifyAndLogin();
 
-    final (badStatus, _) = await ts.call('DELETE', '/users/me',
-        token: token, body: {'mot_de_passe': 'Wrong2026!'});
-    expect(badStatus, 403);
-
-    final (status, _) = await ts.call('DELETE', '/users/me',
-        token: token, body: {'mot_de_passe': 'Proxilife2026!'});
+    final (status, _) = await ts.call('DELETE', '/users/me', token: token);
     expect(status, 200);
 
     final (afterStatus, _) = await ts.call('GET', '/users/me', token: token);

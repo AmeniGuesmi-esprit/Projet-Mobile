@@ -4,8 +4,9 @@ import 'package:proxilife_server/src/auth/passwords.dart';
 import 'package:proxilife_server/src/db/database.dart';
 import 'package:proxilife_server/src/config/server_config.dart';
 
-/// Seed data: a client, a professional driver with a valid RIB, and an admin.
-/// All share the password `Proxilife2026!`.
+/// Seed data: demo accounts. Default demo accounts share `Proxilife2026!`;
+/// two extra accounts (fawzi.saidi@esprit.tn / ameni.guesmi@esprit.tn) have
+/// their own passwords.
 Future<void> main() async {
   final config = await ServerConfig.load();
   final db = await AppDatabase.open(config.dbPath);
@@ -21,6 +22,7 @@ Future<void> main() async {
     required String role,
     String? rib,
     int soldeCentimes = 0,
+    String password = 'Proxilife2026!',
   }) async {
     final existing = await db.db.query(
       'utilisateur',
@@ -35,7 +37,7 @@ Future<void> main() async {
       'prenom': prenom,
       'email': email,
       'telephone': telephone,
-      'mot_de_passe_hash': hasher.hashPassword('Proxilife2026!'),
+      'mot_de_passe_hash': hasher.hashPassword(password),
       'photo': null,
       'role': role,
       'statut_compte': 'actif',
@@ -67,6 +69,24 @@ Future<void> main() async {
     email: 'admin@proxilife.fr',
     telephone: '0600000000',
     role: 'admin',
+  );
+  final fawziId = await upsertUser(
+    nom: 'Saidi',
+    prenom: 'Fawzi',
+    email: 'fawzi.saidi@esprit.tn',
+    telephone: '98123456',
+    role: 'client',
+    soldeCentimes: 5000,
+    password: 'FawziSaidi221',
+  );
+  final ameniId = await upsertUser(
+    nom: 'Guesmi',
+    prenom: 'Ameni',
+    email: 'ameni.guesmi@esprit.tn',
+    telephone: '22123456',
+    role: 'conducteur',
+    rib: '30004000011234567890173',
+    password: 'AmeniGuesmi112',
   );
 
   // A couple of payment methods for the client, for demos.
@@ -111,7 +131,11 @@ Future<void> main() async {
   stdout.writeln('  client      : #$clientId  client@proxilife.fr');
   stdout.writeln('  conducteur  : #$conducteurId  conducteur@proxilife.fr');
   stdout.writeln('  admin       : #$adminId  admin@proxilife.fr');
-  stdout.writeln('Mot de passe commun : Proxilife2026!');
+  stdout.writeln('  fawzi       : #$fawziId  fawzi.saidi@esprit.tn');
+  stdout.writeln('  ameni       : #$ameniId  ameni.guesmi@esprit.tn');
+  stdout.writeln('Mot de passe commun (demo) : Proxilife2026!');
+  stdout.writeln('  fawzi.saidi@esprit.tn    : FawziSaidi221');
+  stdout.writeln('  ameni.guesmi@esprit.tn    : AmeniGuesmi112');
 
   await db.close();
 }

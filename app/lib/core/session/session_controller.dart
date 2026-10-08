@@ -119,8 +119,8 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> deleteAccount(String motDePasse) async {
-    await _api.deleteJson('/users/me', {'mot_de_passe': motDePasse});
+  Future<void> deleteAccount() async {
+    await _api.deleteJson('/users/me');
     await _tokenStore.clear();
     _api.token = null;
     user = null;

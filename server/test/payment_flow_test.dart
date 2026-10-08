@@ -380,7 +380,7 @@ void main() {
           email: 'pro@test.fr', role: 'conducteur', rib: validRib);
       await ts._db.db.insert('transaction_', {
         'montant_centimes': 100,
-        'devise': 'EUR',
+        'devise': 'TND',
         'date': DateTime.now().toIso8601String(),
         'statut': 'en_attente',
         'type_service': 'EcoRoute',

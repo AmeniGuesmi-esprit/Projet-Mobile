@@ -102,7 +102,7 @@ CREATE TABLE moyen_paiement (
 CREATE TABLE transaction_ (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   montant_centimes INTEGER NOT NULL,
-  devise TEXT NOT NULL DEFAULT 'EUR',
+  devise TEXT NOT NULL DEFAULT 'TND',
   date TEXT NOT NULL,
   statut TEXT NOT NULL DEFAULT 'en_attente',
   type_service TEXT NOT NULL,

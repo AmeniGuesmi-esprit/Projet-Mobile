@@ -138,7 +138,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _deleteAccount() async {
-    // First step: plain confirmation.
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -160,91 +159,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
               minimumSize: const Size(0, 44),
             ),
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Continuer'),
+            child: const Text('Supprimer'),
           ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
 
-    // Second step: typed confirmation + password.
-    final passwordController = TextEditingController();
-    final confirmController = TextEditingController();
-    String? error;
-    final valid = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Confirmation définitive'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text('Tapez SUPPRIMER et saisissez votre mot de passe.'),
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                controller: confirmController,
-                textCapitalization: TextCapitalization.characters,
-                decoration:
-                    const InputDecoration(labelText: 'Tapez SUPPRIMER'),
-                onChanged: (_) => setDialogState(() {}),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              TextField(
-                controller: passwordController,
-                obscureText: true,
-                autocorrect: false,
-                decoration:
-                    const InputDecoration(labelText: 'Mot de passe'),
-              ),
-              if (error != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                Text(error!,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: AppColors.error)),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Annuler'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.error,
-                minimumSize: const Size(0, 44),
-              ),
-              onPressed: confirmController.text.trim().toUpperCase() ==
-                          'SUPPRIMER' &&
-                      passwordController.text.isNotEmpty
-                  ? () async {
-                      try {
-                        await widget.session
-                            .deleteAccount(passwordController.text);
-                        if (dialogContext.mounted) {
-                          Navigator.pop(dialogContext, true);
-                        }
-                      } on ApiException catch (e) {
-                        setDialogState(() => error = e.message);
-                      } catch (_) {
-                        setDialogState(() =>
-                            error = 'Une erreur est survenue');
-                      }
-                    }
-                  : null,
-              child: const Text('Supprimer'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (valid == true && mounted) {
+    try {
+      await widget.session.deleteAccount();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Votre compte a été supprimé')),
       );
+    } on ApiException catch (e) {
+      _showError(e.message);
+    } catch (_) {
+      _showError('Une erreur est survenue');
     }
   }
 

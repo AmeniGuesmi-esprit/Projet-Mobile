@@ -44,7 +44,7 @@ cd ../app && flutter analyze && flutter test && flutter run -d emulator-5554
 ## Data conventions
 
 - Money: **whole cents** (`int`), never `double`.
-- Default currency: `EUR`.
+- Default currency: `TND` (Tunisian Dinar, displayed as "DT").
 - Emails: lowercase, unique.
 - Transaction status transitions are defined once in
   `packages/proxilife_shared/lib/src/transaction_rules.dart` — never rewrite

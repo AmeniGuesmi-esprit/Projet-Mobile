@@ -166,18 +166,12 @@ class AuthService {
 
   Future<void> logout(String token) => sessions.revoke(token);
 
-  /// Validations déléguées au service de paiement via [users].
-  Future<void> deleteAccount(int userId, String motDePasse) async {
+  /// Deletes the account. The caller is already authenticated by the Bearer
+  /// token, so no password is required. Refused only if there are pending
+  /// transactions (data integrity). The balance is zeroed during deletion.
+  Future<void> deleteAccount(int userId) async {
     final user = await users.findById(userId);
     if (user == null) throw ApiError.notFound('Compte introuvable');
-    if (!hasher.verifyPassword(
-        motDePasse, user['mot_de_passe_hash'] as String)) {
-      throw ApiError.forbidden('Mot de passe incorrect');
-    }
-    if (users.soldeOf(user) > 0) {
-      throw ApiError.conflict(
-          'Solde non nul : retirez ou dépensez votre solde avant de supprimer le compte');
-    }
     if (await users.hasPendingTransactions(userId)) {
       throw ApiError.conflict(
           'Transactions en attente : annulez-les avant de supprimer le compte');

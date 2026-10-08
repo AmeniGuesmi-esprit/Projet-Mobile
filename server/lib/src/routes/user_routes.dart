@@ -87,11 +87,7 @@ Router buildUserRoutes(UserRepository users, AuthService auth) {
 
   router.delete('/users/me', (Request request) {
     return guard(() async {
-      final body = await readJsonBody(request);
-      await auth.deleteAccount(
-        request.userId,
-        body['mot_de_passe'] as String? ?? '',
-      );
+      await auth.deleteAccount(request.userId);
       return jsonResponse({'message': 'Compte supprimé'});
     });
   });
