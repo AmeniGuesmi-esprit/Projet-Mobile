@@ -1,11 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 
+import 'package:proxilife_server/src/app.dart';
 import 'package:proxilife_server/src/db/database.dart';
 import 'package:proxilife_server/src/config/server_config.dart';
-import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
-import 'package:shelf_router/shelf_router.dart';
 
 Future<void> main(List<String> args) async {
   final config = await ServerConfig.load();
@@ -15,21 +13,7 @@ Future<void> main(List<String> args) async {
       'E-mail   : ${config.emailConsoleMode ? 'console (offline)' : 'smtp'}');
 
   final database = await AppDatabase.open(config.dbPath);
-
-  final router = Router()
-    ..get('/health', (Request request) {
-      return Response.ok(
-        jsonEncode({
-          'status': 'ok',
-          'time': DateTime.now().toIso8601String(),
-        }),
-        headers: {'content-type': 'application/json'},
-      );
-    });
-
-  final handler = const Pipeline()
-      .addMiddleware(logRequests())
-      .addHandler(router.call);
+  final handler = buildApp(database, config);
 
   final server = await shelf_io.serve(
     handler,

@@ -1,13 +1,32 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:proxilife/main.dart';
 
-void main() {
-  testWidgets('App builds the main shell with the three tabs', (tester) async {
-    await tester.pumpWidget(const ProxiLifeApp());
+import 'fakes.dart';
 
-    expect(find.text('ProxiLife'), findsOneWidget);
-    expect(find.text('Accueil'), findsOneWidget);
-    expect(find.text('Paiements'), findsOneWidget);
-    expect(find.text('Profil'), findsOneWidget);
+void main() {
+  testWidgets('Cold start without a stored session shows the login screen',
+      (tester) async {
+    await tester.pumpWidget(ProxiLifeApp(session: makeTestSession()));
+    await tester.pumpAndSettle();
+
+    // Splash disappears, login screen appears.
+    expect(find.text('Bienvenue sur ProxiLife'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Se connecter'), findsOneWidget);
+    expect(find.text('Créer un compte'), findsOneWidget);
+  });
+
+  testWidgets('Login form validates the e-mail before submitting',
+      (tester) async {
+    await tester.pumpWidget(ProxiLifeApp(session: makeTestSession()));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Adresse e-mail'),
+        'not-an-email');
+    await tester.tap(find.widgetWithText(FilledButton, 'Se connecter'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Adresse e-mail invalide'), findsOneWidget);
   });
 }
