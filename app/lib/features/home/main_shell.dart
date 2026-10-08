@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/session/session_controller.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/widgets/empty_state.dart';
+import '../payment/payments_screen.dart';
 import '../profile/profile_screen.dart';
 import 'home_screen.dart';
 
@@ -23,12 +22,7 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final pages = <Widget>[
       HomeScreen(session: widget.session),
-      const EmptyState(
-        icon: Icons.account_balance_wallet_outlined,
-        title: 'Paiements',
-        message: 'Arrive avec le module Paiement.',
-        color: AppColors.moduleCompte,
-      ),
+      PaymentsScreen(session: widget.session),
       ProfileScreen(session: widget.session),
     ];
 
