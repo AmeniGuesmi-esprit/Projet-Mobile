@@ -44,8 +44,9 @@ class _TeledocRequestDetailScreenState
     _future = widget.repository.request(widget.requestId);
   }
 
-  void _reload() =>
-      setState(() => _future = widget.repository.request(widget.requestId));
+  void _reload() => setState(() {
+    _future = widget.repository.request(widget.requestId);
+  });
 
   Future<void> _edit(TeledocRequestDto request) async {
     final saved = await Navigator.of(context).push<TeledocRequestDto>(

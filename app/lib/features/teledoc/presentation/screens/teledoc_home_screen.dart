@@ -6,6 +6,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../data/teledoc_api_repository.dart';
 import '../../domain/teledoc_repository.dart';
+import 'doctor/teledoc_doctor_home_screen.dart';
 import 'patient/teledoc_patient_home_screen.dart';
 
 /// Entry of the TeleDoc module: routes to the patient or the doctor space
@@ -26,6 +27,7 @@ class TeledocHomeScreen extends StatelessWidget {
         session: session,
         repository: repo,
       ),
+      UserRole.medecin => TeledocDoctorHomeScreen(repository: repo),
       _ => Scaffold(
         appBar: AppBar(title: const Text('TeleDoc Express')),
         body: const EmptyState(

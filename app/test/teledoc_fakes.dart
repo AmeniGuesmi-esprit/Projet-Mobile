@@ -91,11 +91,14 @@ class FakeTeledocRepository implements TeledocRepository {
 
   ApiException? nextError;
   final List<String> calls = [];
+
+  /// Payload of the last call that had one.
   Map<String, Object?>? lastPayload;
 
   void _record(String call, [Map<String, Object?>? payload]) {
     calls.add(call);
-    lastPayload = payload;
+    // Reloads after an action (no payload) must not hide the action's data.
+    if (payload != null) lastPayload = payload;
     final error = nextError;
     if (error != null) {
       nextError = null;

@@ -35,9 +35,9 @@ class _TeledocConsultationDetailScreenState
     _future = widget.repository.consultation(widget.consultationId);
   }
 
-  void _reload() => setState(
-    () => _future = widget.repository.consultation(widget.consultationId),
-  );
+  void _reload() => setState(() {
+    _future = widget.repository.consultation(widget.consultationId);
+  });
 
   @override
   Widget build(BuildContext context) {

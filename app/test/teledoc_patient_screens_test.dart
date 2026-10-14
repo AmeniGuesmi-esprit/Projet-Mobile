@@ -306,6 +306,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(repo.calls, contains('cancelRequest 5'));
+      // Régression : le rechargement après succès ne doit pas afficher
+      // d'erreur (setState renvoyait un Future).
+      expect(find.textContaining('erreur inattendue'), findsNothing);
+      expect(find.text('Demande annulée et remboursée'), findsOneWidget);
       expect(find.text('Annulée'), findsOneWidget);
       expect(find.text('Modifier'), findsNothing);
     });
