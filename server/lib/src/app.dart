@@ -14,6 +14,7 @@ import 'repositories/user_repository.dart';
 import 'repositories/verification_repository.dart';
 import 'routes/auth_routes.dart';
 import 'routes/payment_routes.dart';
+import 'routes/teledoc_routes.dart';
 import 'routes/user_routes.dart';
 import 'services/auth_service.dart';
 import 'services/payment_service.dart';
@@ -59,7 +60,8 @@ Handler buildApp(
     ..post('/auth/logout',
         (Request request) => handleLogout(request, auth))
     ..mount('/', buildUserRoutes(users, auth).call)
-    ..mount('/', buildPaymentRoutes(payments).call);
+    ..mount('/', buildPaymentRoutes(payments).call)
+    ..mount('/', buildTeledocModule(database.db).call);
 
   final pipeline = Pipeline()
       .addMiddleware(requireAuth(sessions))
