@@ -4,3 +4,4 @@ export 'src/dto/user_dto.dart';
 export 'src/enums.dart';
 export 'src/transaction_rules.dart';
 export 'src/validators.dart';
+export 'src/teledoc/teledoc.dart';

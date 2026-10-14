@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'teledoc_schema.dart';
+
 /// Opens (and migrates) the ProxiLife SQLite database.
 class AppDatabase {
   AppDatabase._(this._db);
@@ -19,9 +21,10 @@ class AppDatabase {
     final db = await databaseFactory.openDatabase(
       absolute,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 2, // v2 : tables TeleDoc (teledoc_schema.dart)
         onConfigure: _enableForeignKeys,
         onCreate: (db, version) async => _createSchema(db),
+        onUpgrade: upgradeTeledocSchema,
       ),
     );
     return AppDatabase._(db);
@@ -33,9 +36,10 @@ class AppDatabase {
     final db = await databaseFactory.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 2, // v2 : tables TeleDoc (teledoc_schema.dart)
         onConfigure: _enableForeignKeys,
         onCreate: (db, version) async => _createSchema(db),
+        onUpgrade: upgradeTeledocSchema,
       ),
     );
     return AppDatabase._(db);
@@ -123,6 +127,8 @@ CREATE TABLE transaction_ (
     await db.execute(
       'CREATE INDEX transaction_beneficiaire_idx ON transaction_(beneficiaire_id)',
     );
+
+    await createTeledocSchema(db);
   }
 
   Future<void> close() async {

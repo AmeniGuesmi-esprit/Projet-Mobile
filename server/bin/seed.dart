@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:proxilife_server/src/auth/passwords.dart';
 import 'package:proxilife_server/src/db/database.dart';
+import 'package:proxilife_server/src/db/teledoc_seed.dart';
 import 'package:proxilife_server/src/config/server_config.dart';
 
 /// Seed data: demo accounts. Default demo accounts share `Proxilife2026!`;
@@ -136,6 +137,7 @@ Future<void> main() async {
   stdout.writeln('Mot de passe commun (demo) : Proxilife2026!');
   stdout.writeln('  fawzi.saidi@esprit.tn    : FawziSaidi221');
   stdout.writeln('  ameni.guesmi@esprit.tn    : AmeniGuesmi112');
+  stdout.writeln(await seedTeledoc(db.db));
 
   await db.close();
 }

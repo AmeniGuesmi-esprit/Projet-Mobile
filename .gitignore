@@ -56,3 +56,6 @@ server/.env
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# TeleDoc : photos de symptômes envoyées au serveur local
+server/uploads/
