@@ -27,6 +27,8 @@ conception : modèle de données, API REST, machine à états et file d'attente.
 | D18 | Annulation : **remboursement d'abord**, changement de statut ensuite. Si le remboursement est refusé : 409 et la demande reste inchangée. | On n'annule jamais une demande payée sans avoir rendu l'argent. | Statut d'abord : demande annulée mais non remboursée en cas d'échec. |
 | D19 | Point d'entrée **`buildTeledocModule(db)`** dans `teledoc_routes.dart` ; `app.dart` n'a qu'une ligne `..mount(...)`. Le mock est la valeur par défaut **dans ce fichier TeleDoc**. | Brancher le vrai paiement (Étape 11) ne touche aucun fichier partagé ; les tests injectent une passerelle espion et un dossier d'uploads temporaire. | Paramètres ajoutés à `buildApp` : modifie la signature d'un fichier partagé. |
 | D20 | Les champs JSON d'un mauvais type (ex. `"motif": 42`) donnent un **400** explicite, pas un 500. | Un `as String` raté serait capturé comme erreur interne par `guard`. | Casts directs comme dans les autres modules. |
+| D21 | `TeledocQueueService` construit un **instantané** de la file (lignes triées, positions, `M`, `D`) en une lecture ; tous les endpoints l'utilisent, y compris dans la transaction de prise en charge. | Une seule logique de calcul côté serveur (celle de `TeledocQueue`, partagée), état cohérent pendant la prise de la tête de file. | Calcul dispersé dans chaque endpoint. |
+| D22 | Prise de la tête de file : transaction + `UPDATE ... WHERE statut = 'en_attente'` (on vérifie qu'une ligne a changé) + index unique partiel. File vide : 404 ; consultation déjà ouverte : 409. | Triple garde contre les doubles prises, testée avec deux médecins simultanés. | Simple lecture puis écriture : condition de course. |
 
 ## 1. Diagramme de classes
 
@@ -285,7 +287,7 @@ avec 400 / 401 / 403 / 404 / 409. « Patient » = rôle `client`.
 | GET | `/teledoc/requests/:id` | patient propriétaire · médecin (si en file ou s'il la traite) | — | 200 `TeledocRequestDto` |
 | PATCH | `/teledoc/requests/:id` | patient propriétaire, statut `en_attente` | `{motif?, description?, urgence?, photo_base64?, supprimer_photo?}` | 200 `TeledocRequestDto` |
 | POST | `/teledoc/requests/:id/cancel` | patient (si `en_attente`) · médecin qui la traite (si `en_cours`, patient absent) | — | 200 `TeledocRequestDto` (+ remboursement) |
-| GET | `/teledoc/requests/:id/queue-status` | patient propriétaire | — | 200 `{statut, position_file, temps_estime_minutes, consultation_id?}` (léger, pour le polling) |
+| GET | `/teledoc/requests/:id/queue-status` | patient propriétaire | — | 200 `{id_demande, statut, position_file, temps_estime_minutes, taille_file, consultation_id?, type_consultation?}` (léger, pour le polling) |
 | GET | `/teledoc/requests/:id/photo` | comme GET `/:id` | — | 200 `image/jpeg` ou `image/png` |
 
 ### 3.2 File d'attente et consultations
@@ -368,7 +370,7 @@ Modification du contenu (motif, description, urgence, photo) : seulement en `en_
 - **Position** `p` : rang (à partir de 1) de la demande dans cet ordre.
 - **Durée moyenne** `D` : moyenne de `date_fin − date_debut` des 20 dernières
   consultations terminées, bornée à [5, 60] min ; 15 min s'il n'y a pas d'historique.
-- **Médecins** `M` : nombre de comptes `medecin` actifs, au minimum 1.
+- **Médecins** `M` : nombre de comptes `medecin` au statut `actif` (les comptes suspendus ne comptent pas), au minimum 1.
 - **Temps estimé** : `⌊(p − 1) / M⌋ × D` minutes. Les `M` premiers attendent ≈ 0 min.
 
 Exemple : `p = 5`, `M = 2`, `D = 15` → `⌊4 / 2⌋ × 15 = 30 min`.
@@ -376,14 +378,15 @@ Exemple : `p = 5`, `M = 2`, `D = 15` → `⌊4 / 2⌋ × 15 = 30 min`.
 Le temps est **dynamique** : il change quand une demande devant est annulée ou
 prise en charge, quand une urgence arrive, ou quand la durée moyenne évolue.
 
-Limite connue (à présenter à l'oral) : une file à priorité stricte peut faire
-attendre longtemps une demande `faible`. Amélioration possible : priorité qui
-augmente avec l'ancienneté (*aging*).
+Limites connues (à présenter à l'oral) :
+- une file à priorité stricte peut faire attendre longtemps une demande `faible`. Amélioration possible : une priorité qui augmente avec l'ancienneté (*aging*) ;
+- `M` compte tous les médecins actifs, connectés ou non (il n'y a pas de notion de disponibilité). Amélioration possible : un statut « disponible » côté médecin ;
+- le patient peut passer son urgence à `elevee` tant que la demande est en attente, ce qui le fait avancer. Le médecin juge à la lecture du motif et de la photo.
 
 ### 5.2 Diagramme de séquence
 
-Le mode de mise à jour sera justifié à l'Étape 7 ; le diagramme montre le
-polling, qui est la solution recommandée.
+Mise à jour par **polling toutes les 5 s** (décision validée ; justification
+détaillée à l'Étape 7).
 
 ```mermaid
 sequenceDiagram
@@ -404,7 +407,7 @@ sequenceDiagram
     S-->>P: 201 {position_file: 3, temps_estime: 30}
 
     P->>Q: ouvre l'écran de suivi
-    loop toutes les 10 s (tant que l'écran est visible)
+    loop toutes les 5 s (tant que l'écran est visible)
         Q->>S: GET /teledoc/requests/12/queue-status
         S->>DB: SELECT demandes en_attente (+ durées)
         S-->>Q: {statut, position_file, temps_estime}

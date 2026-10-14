@@ -11,6 +11,7 @@ import '../repositories/teledoc_pharmacy_repository.dart';
 import '../repositories/teledoc_request_repository.dart';
 import '../services/teledoc_payment_gateway.dart';
 import '../services/teledoc_photo_store.dart';
+import '../services/teledoc_queue_service.dart';
 import '../services/teledoc_service.dart';
 
 /// Wires the TeleDoc module; `app.dart` mounts it with a single line.
@@ -24,13 +25,20 @@ Router buildTeledocModule(
   String uploadsDir = 'uploads/teledoc',
   DateTime Function()? clock,
 }) {
+  final requests = TeledocRequestRepository(db);
+  final consultations = TeledocConsultationRepository(db);
   return buildTeledocRoutes(TeledocService(
     db: db,
-    requests: TeledocRequestRepository(db),
-    consultations: TeledocConsultationRepository(db),
+    requests: requests,
+    consultations: consultations,
     pharmacies: TeledocPharmacyRepository(db),
     photos: TeledocPhotoStore(uploadsDir),
     payments: payments,
+    queue: TeledocQueueService(
+      db: db,
+      requests: requests,
+      consultations: consultations,
+    ),
     clock: clock,
   ));
 }
@@ -110,7 +118,35 @@ Router buildTeledocRoutes(TeledocService service) {
     });
   });
 
+  // ---- File d'attente virtuelle ----
+
+  router.get('/teledoc/requests/<id|[0-9]+>/queue-status',
+      (Request request, String id) {
+    return guard(() async {
+      final dto = await service.queueStatus(_caller(request), int.parse(id));
+      return jsonResponse(dto.toJson());
+    });
+  });
+
+  router.get('/teledoc/queue', (Request request) {
+    return guard(() async {
+      final list = await service.waitingQueue(_caller(request));
+      return jsonResponse({'items': list.map((d) => d.toJson()).toList()});
+    });
+  });
+
   // ---- Consultations ----
+
+  router.post('/teledoc/consultations', (Request request) {
+    return guard(() async {
+      final body = await readJsonBody(request);
+      final dto = await service.startNextConsultation(
+        _caller(request),
+        type: _string(body, 'type'),
+      );
+      return jsonResponse(dto.toJson(), status: 201);
+    });
+  });
 
   router.get('/teledoc/consultations', (Request request) {
     return guard(() async {

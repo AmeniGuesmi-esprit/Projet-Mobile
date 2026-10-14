@@ -61,6 +61,19 @@ class TeledocRequestRepository {
       (executor ?? _db)
           .update('teledoc_demande', values, where: 'id = ?', whereArgs: [id]);
 
+  /// Moves a request from `en_attente` to `en_cours` only if it is still
+  /// waiting. Returns false if someone else took it first.
+  Future<bool> claimWaiting(
+      int id, String at, DatabaseExecutor executor) async {
+    final changed = await executor.update(
+      'teledoc_demande',
+      {'statut': TeledocRequestStatus.enCours.apiValue, 'modifie_le': at},
+      where: 'id = ? AND statut = ?',
+      whereArgs: [id, TeledocRequestStatus.enAttente.apiValue],
+    );
+    return changed == 1;
+  }
+
   Future<void> delete(int id) =>
       _db.delete('teledoc_demande', where: 'id = ?', whereArgs: [id]);
 

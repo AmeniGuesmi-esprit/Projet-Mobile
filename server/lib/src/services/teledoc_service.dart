@@ -7,6 +7,7 @@ import '../repositories/teledoc_pharmacy_repository.dart';
 import '../repositories/teledoc_request_repository.dart';
 import 'teledoc_payment_gateway.dart';
 import 'teledoc_photo_store.dart';
+import 'teledoc_queue_service.dart';
 
 /// The authenticated caller, as seen by TeleDoc: patients are `client`
 /// accounts, doctors `medecin` accounts. Any other role is refused.
@@ -41,6 +42,7 @@ class TeledocService {
     required this.pharmacies,
     required this.photos,
     required this.payments,
+    required this.queue,
     DateTime Function()? clock,
   })  : _db = db,
         _now = clock ?? DateTime.now;
@@ -51,6 +53,7 @@ class TeledocService {
   final TeledocPharmacyRepository pharmacies;
   final TeledocPhotoStore photos;
   final TeledocPaymentGateway payments;
+  final TeledocQueueService queue;
   final DateTime Function() _now;
 
   String _timestamp() => _now().toIso8601String();
@@ -232,6 +235,90 @@ class TeledocService {
   }
 
   // -------------------------------------------------------------------------
+  // File d'attente virtuelle
+  // -------------------------------------------------------------------------
+
+  /// Patient: lightweight status polled by the waiting screen.
+  Future<TeledocQueueStatusDto> queueStatus(TeledocUser user, int id) async {
+    _requirePatient(user);
+    final row = await _visibleRequest(user, id);
+    final snapshot = await queue.snapshot();
+    final place = snapshot.placeOf(id);
+    final cType = row['c_type'] as String?;
+    return TeledocQueueStatusDto(
+      idDemande: id,
+      statut: _status(row),
+      positionFile: place?.position,
+      tempsEstimeMinutes: place?.waitMinutes,
+      taille: snapshot.size,
+      consultationId: row['c_id'] as int?,
+      typeConsultation:
+          cType == null ? null : TeledocConsultationType.parse(cType),
+    );
+  }
+
+  /// Doctor: the waiting queue, head first, with positions and waits.
+  Future<List<TeledocRequestDto>> waitingQueue(TeledocUser user) async {
+    _requireDoctor(user);
+    final snapshot = await queue.snapshot();
+    return [
+      for (final row in snapshot.ordered)
+        requests.toDto(row, place: snapshot.placeOf(row['id'] as int)),
+    ];
+  }
+
+  /// Doctor: starts a consultation with the request at the head of the
+  /// queue (decision D4). Runs in one transaction so that two doctors can
+  /// never take the same request; the partial unique index (D5) guarantees
+  /// one open consultation per doctor even under concurrent calls.
+  Future<TeledocConsultationDto> startNextConsultation(
+    TeledocUser user, {
+    required String? type,
+  }) async {
+    _requireDoctor(user);
+    final callType = _parseType(type);
+    final at = _timestamp();
+
+    final int consultationId;
+    try {
+      consultationId = await _db.transaction((txn) async {
+        if (await consultations.findOpenForDoctor(user.id, txn) != null) {
+          throw ApiError.conflict(
+              'Vous avez déjà une consultation en cours : terminez-la d\'abord');
+        }
+        final snapshot = await queue.snapshot(txn);
+        if (snapshot.size == 0) {
+          throw ApiError.notFound('Aucune demande en attente');
+        }
+        final head = snapshot.ordered.first;
+        final requestId = head['id'] as int;
+        if (!TeledocRequestRules.canTransition(
+                _status(head), TeledocRequestStatus.enCours, user.actor) ||
+            !await requests.claimWaiting(requestId, at, txn)) {
+          throw ApiError.conflict(
+              'Cette demande vient d\'être prise en charge, réessayez');
+        }
+        return consultations.insert({
+          'date_debut': at,
+          'date_fin': null,
+          'type': callType.apiValue,
+          'ordonnance': null,
+          'pharmacie_id': null,
+          'demande_id': requestId,
+          'medecin_id': user.id,
+        }, txn);
+      });
+    } on DatabaseException catch (e) {
+      // teledoc_consultation_une_en_cours / UNIQUE(demande_id).
+      if (e.isUniqueConstraintError()) {
+        throw ApiError.conflict('Consultation déjà en cours, réessayez');
+      }
+      rethrow;
+    }
+    return getConsultation(user, consultationId);
+  }
+
+  // -------------------------------------------------------------------------
   // Consultations
   // -------------------------------------------------------------------------
 
@@ -391,10 +478,18 @@ class TeledocService {
   // Helpers
   // -------------------------------------------------------------------------
 
-  /// Converts rows to DTOs (queue position / wait are added at Étape 4).
+  /// Converts rows to DTOs, adding the derived queue position and wait to
+  /// waiting requests (one snapshot for the whole list).
   Future<List<TeledocRequestDto>> _requestDtos(
-          List<Map<String, Object?>> rows) async =>
-      rows.map(requests.toDto).toList();
+      List<Map<String, Object?>> rows) async {
+    final needsQueue =
+        rows.any((r) => _status(r) == TeledocRequestStatus.enAttente);
+    final snapshot = needsQueue ? await queue.snapshot() : null;
+    return [
+      for (final row in rows)
+        requests.toDto(row, place: snapshot?.placeOf(row['id'] as int)),
+    ];
+  }
 
   /// Loads a request the caller is allowed to see, else 404.
   Future<Map<String, Object?>> _visibleRequest(TeledocUser user, int id) async {
