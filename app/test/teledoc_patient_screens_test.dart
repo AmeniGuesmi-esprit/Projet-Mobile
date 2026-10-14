@@ -287,6 +287,12 @@ void main() {
       tester,
     ) async {
       final repo = await openDetail(tester, fakeRequest(id: 5));
+      await tester.scrollUntilVisible(
+        find.text('Modifier'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Suivre la file en direct'), findsOneWidget);
       expect(find.text('Modifier'), findsOneWidget);
       await scrollAndTap(tester, find.text('Annuler la demande'));
       await tester.pumpAndSettle();

@@ -35,6 +35,9 @@ conception : modèle de données, API REST, machine à états et file d'attente.
 | D26 | Photo : redimensionnée sur l'appareil (1600 px, qualité 80) et taille vérifiée côté app **avant** l'envoi ; le serveur revérifie tout. | Évite d'envoyer 5 Mo pour se faire refuser ; la validation de l'app n'est que de l'UX (AGENTS.md). | Pas de contrôle côté app : erreur tardive. |
 | D27 | Formulaires dans un `SingleChildScrollView` + `Column`, **pas** une `ListView`. | `Form.validate()` ne valide que les champs montés : dans une liste paresseuse, un champ hors écran échappait à la validation (bug trouvé par les tests). | `ListView` : validation incomplète. |
 | D28 | Couleurs des puces : « Annulée » en gris neutre (une annulation n'est pas une erreur), urgence élevée en rouge avec icône, moyenne en jaune avec texte foncé. | Règles de contraste de la charte ; la couleur n'est jamais le seul signal (libellé toujours présent). | Rouge pour « Annulée » : confusion avec une erreur. |
+| D29 | Suivi de file par **polling toutes les 5 s** (`TeledocQueueController`), uniquement pendant que l'écran de file existe ; arrêt automatique dès que la demande quitte la file ; rafraîchissement immédiat au retour au premier plan (`AppLifecycleListener`). | Voir le tableau du §5.2. | WebSocket : plus complexe pour un gain de quelques secondes. |
+| D30 | Notifications locales via le `NotificationService` existant, en respectant la **préférence globale** « notifications » du profil ; si elle est désactivée, l'écran de file propose « Activer » (permission Android 13+). | Pas de second réglage concurrent ; l'utilisateur garde la main. | Notifier sans tenir compte du réglage. |
+| D31 | Limite assumée : sans Firebase (interdit par AGENTS.md), pas de push quand l'app est tuée. Les alertes arrivent tant que le processus vit (écran ouvert ou app récemment en arrière-plan), et l'écran invite à garder l'app ouverte. | Contrainte du projet. | FCM : interdit. |
 
 ## 1. Diagramme de classes
 
@@ -391,8 +394,19 @@ Limites connues (à présenter à l'oral) :
 
 ### 5.2 Diagramme de séquence
 
-Mise à jour par **polling toutes les 5 s** (décision validée ; justification
-détaillée à l'Étape 7).
+Mise à jour par **polling toutes les 5 s** (D29) :
+
+| Critère | Polling 5 s (retenu) | WebSocket |
+|---|---|---|
+| Latence | ≤ 5 s : suffisant pour une attente de plusieurs minutes | Immédiate |
+| Serveur | Endpoints REST existants, sans état | `shelf_web_socket` + gestion des connexions et des abonnements |
+| Robustesse | Une requête ratée est rattrapée au tour suivant | Reconnexion, rejeu et détection de coupure à écrire |
+| Coût | ≤ 12 petites requêtes/min par patient en attente, arrêtées hors file | 1 connexion ouverte par patient |
+| Tests | Horloge simulée (`tester.pump(5 s)`) | Serveur WebSocket à simuler |
+
+Le WebSocket sera de toute façon nécessaire pour la signalisation de l'appel
+(Étape 9). Le polling reste le bon choix pour la file : le temps estimé
+change à l'échelle de la minute, et le polling est simple et fiable.
 
 ```mermaid
 sequenceDiagram

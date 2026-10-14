@@ -11,6 +11,7 @@ import '../../../domain/teledoc_repository.dart';
 import '../../widgets/teledoc_async_view.dart';
 import '../../widgets/teledoc_chips.dart';
 import 'teledoc_consultation_detail_screen.dart';
+import 'teledoc_queue_screen.dart';
 import 'teledoc_request_detail_screen.dart';
 import 'teledoc_request_form_screen.dart';
 
@@ -60,8 +61,22 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
     if (!mounted) return;
     _reload();
     if (created != null) {
-      await _openRequest(created);
+      // Straight to the live queue: the patient sees their position.
+      await _openQueue(created);
     }
+  }
+
+  Future<void> _openQueue(TeledocRequestDto request) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => TeledocQueueScreen(
+          session: widget.session,
+          repository: widget.repository,
+          requestId: request.id,
+        ),
+      ),
+    );
+    if (mounted) _reload();
   }
 
   Future<void> _openRequest(TeledocRequestDto request) async {
@@ -117,7 +132,9 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
               if (active != null)
                 _ActiveRequestCard(
                   request: active,
-                  onOpen: () => _openRequest(active),
+                  onOpen: () => active.statut == TeledocRequestStatus.enAttente
+                      ? _openQueue(active)
+                      : _openRequest(active),
                 )
               else
                 _NewRequestCard(onCreate: _openForm),

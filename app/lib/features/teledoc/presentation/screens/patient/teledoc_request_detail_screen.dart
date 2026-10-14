@@ -11,6 +11,7 @@ import '../../widgets/teledoc_async_view.dart';
 import '../../widgets/teledoc_chips.dart';
 import '../../widgets/teledoc_photo.dart';
 import 'teledoc_consultation_detail_screen.dart';
+import 'teledoc_queue_screen.dart';
 import 'teledoc_request_form_screen.dart';
 
 /// Patient: one request, with the actions its status allows
@@ -225,6 +226,22 @@ class _TeledocRequestDetailScreenState
   List<Widget> _actions(TeledocRequestDto request) {
     final consultationId = request.consultationId;
     return [
+      if (request.statut == TeledocRequestStatus.enAttente) ...[
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => TeledocQueueScreen(
+                session: widget.session,
+                repository: widget.repository,
+                requestId: request.id,
+              ),
+            ),
+          ),
+          icon: const Icon(Icons.groups_outlined),
+          label: const Text('Suivre la file en direct'),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+      ],
       if (TeledocRequestRules.canEdit(request.statut))
         OutlinedButton.icon(
           onPressed: _cancelling ? null : () => _edit(request),
