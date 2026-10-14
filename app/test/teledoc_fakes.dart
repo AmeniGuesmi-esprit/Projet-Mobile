@@ -1,7 +1,10 @@
 import 'package:proxilife/core/api/api_client.dart';
+import 'package:proxilife/core/session/session_controller.dart';
 import 'package:proxilife/features/teledoc/domain/teledoc_queue_tracker.dart';
 import 'package:proxilife/features/teledoc/domain/teledoc_repository.dart';
 import 'package:proxilife_shared/proxilife_shared.dart';
+
+import 'fakes.dart';
 
 TeledocRequestDto fakeRequest({
   int id = 1,
@@ -312,3 +315,17 @@ class RecordingNotifier implements TeledocQueueNotifier {
     events.add(event);
   }
 }
+
+/// Test session already logged in with [role].
+SessionController teledocSession(UserRole role) =>
+    makeTestSession()
+      ..user = UserDto(
+        id: role == UserRole.medecin ? 10 : 1,
+        nom: role == UserRole.medecin ? 'Ben Salah' : 'Guesmi',
+        prenom: role == UserRole.medecin ? 'Sami' : 'Ameni',
+        email: 'test@proxilife.fr',
+        telephone: '98000000',
+        role: role,
+        statutCompte: AccountStatus.actif,
+        soldeCentimes: 5000,
+      );

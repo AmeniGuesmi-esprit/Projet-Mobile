@@ -7,6 +7,7 @@ import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/money_text.dart';
 import '../payment/new_payment_screen.dart';
 import '../payment/payment_methods_screen.dart';
+import '../teledoc/presentation/widgets/teledoc_entry_card.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.session});
@@ -112,6 +113,7 @@ class HomeScreen extends StatelessWidget {
                 ),
               ],
             ),
+            TeledocEntryCard(session: session),
             const SizedBox(height: AppSpacing.xl),
             Text('Paiements',
                 style: Theme.of(context).textTheme.titleMedium),
