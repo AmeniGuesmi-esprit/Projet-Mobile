@@ -59,3 +59,7 @@ desktop.ini
 
 # TeleDoc : photos de symptômes envoyées au serveur local
 server/uploads/
+.dart_tool/
+build/
+server/uploads/
+*.db
