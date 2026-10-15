@@ -46,6 +46,7 @@ conception : modèle de données, API REST, machine à états et file d'attente.
 | D37 | L'ordonnance ne peut être envoyée qu'à une pharmacie **de garde** (vérifié par le serveur, 409 sinon) ; le patient peut changer de pharmacie ensuite. | Le but est d'obtenir le médicament maintenant (nuit, week-end). Validation serveur, l'app n'est qu'un confort. | Accepter toute pharmacie : l'ordonnance pourrait partir vers une officine fermée. |
 | D38 | Carte **`flutter_map` + tuiles OpenStreetMap** (sans clé d'API), `userAgentPackageName` renseigné et attribution « © OpenStreetMap contributors » affichée (politique d'usage OSM). Mêmes versions que FoodSave (`flutter_map ^8.3.2`, `latlong2 ^0.10.1`, `geolocator ^14.1.1`) et mêmes lignes de permission dans le manifeste. | Décision imposée (pas de clé), et zéro conflit de versions à la fusion avec FoodSave. | Google Maps : clé d'API et facturation. |
 | D39 | GPS : lecture **ponctuelle** en haute précision (10 s max, puis dernière position connue). En cas de refus, de service coupé ou d'échec : **repli sur Tunis centre**, bandeau explicatif et bouton « Réglages » / « Réessayer » ; la liste reste utilisable. Itinéraire : lien `geo:` (l'utilisateur choisit son app de cartes), sinon itinéraire OpenStreetMap dans le navigateur ; appel via `tel:` (pas de permission CALL_PHONE). | Un refus de permission ne doit jamais bloquer la recherche. La précision « medium » passe par le fournisseur réseau, que l'émulateur ne simule pas. Moindre privilège. | Bloquer l'écran sans position. Calcul d'itinéraire maison (service de routage à héberger). |
+| D40 | Étape 11 : l'adaptateur réel `PaymentServiceTeledocGateway` est **écrit et testé contre le vrai `PaymentService`** (tests de contrat, base en mémoire), mais **pas branché par défaut** : le mock reste actif tant que Fawzi n'a pas validé un compte bénéficiaire. Le branchement tient en une ligne (`teledocPaymentGateway(...)` dans `app.dart`). | Le module Paiement (`feat/payment`, 08/10) n'a pas levé les blocages de §7.4 (bénéficiaire inconnu à la création, remboursement dépendant du solde du bénéficiaire). On livre du code prêt sans imposer de choix au module d'un autre membre. | Brancher d'office avec un compte bénéficiaire créé par TeleDoc : interdit (pas de compte spécial, pas de modification du module Paiement). |
 
 ## 1. Diagramme de classes
 
@@ -545,6 +546,26 @@ avec Fawzi, **le mock reste l'implémentation par défaut**.
 
 L'**Étape 11** devient : brancher l'adaptateur réel sur l'API de Fawzi quand
 elle sera prête. Aucun développement de paiement dans TeleDoc.
+
+### 7.6 Étape 11 réalisée : adaptateur prêt, mock toujours par défaut
+
+État de `origin/feat/payment` au 15/10 (dernier commit du 08/10) : `createTransaction` et `refund` ont la même signature qu'en §7.4, donc les deux blocages restent. Ce qui est livré :
+
+| Élément | Fichier | Rôle |
+|---|---|---|
+| `PaymentServiceTeledocGateway` | `server/lib/src/services/teledoc_payment_service_gateway.dart` | `charge` → `createTransaction(patient, 3000, beneficiaireEmail, ServiceType.teleDoc, 'TD-<id>')` ; statut ≠ `paye` ou `ApiError` → `TeledocPaymentDeclined` (402 avec le message de Fawzi, ex. « Ajoutez d'abord un moyen de paiement »). `refund` → `refund(id, patient, client)` ; un id ≤ 0 (payé avec le mock) n'est pas remboursé. |
+| `teledocPaymentGateway(payments, beneficiaryEmail:)` | même fichier | Mock si aucun bénéficiaire n'est configuré, adaptateur réel sinon. |
+| Tests de contrat | `server/test/teledoc_payment_adapter_test.dart` | 8 tests sur le **vrai** `PaymentService` : paiement, refus sans moyen de paiement, portefeuille insuffisant, remboursement, blocage « solde du bénéficiaire », id fictif, choix mock/réel, et parcours complet par l'API TeleDoc (402 → 201 → annulation remboursée). |
+
+**Pour brancher** (avec l'accord de Fawzi, une ligne dans `app.dart`) :
+
+```dart
+..mount('/', buildTeledocModule(database.db,
+    payments: teledocPaymentGateway(payments,
+        beneficiaryEmail: '<compte plateforme choisi avec Fawzi>')).call);
+```
+
+**Point à signaler à Fawzi** : sur `feat/payment`, la devise par défaut des transactions est passée de `TND` à `EUR`, alors que `AGENTS.md` impose `TND`. TeleDoc affiche 30 DT.
 
 ## 8. Appel audio / vidéo (Étape 9)
 
