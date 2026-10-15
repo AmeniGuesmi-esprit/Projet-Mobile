@@ -14,6 +14,7 @@ import 'teledoc_consultation_detail_screen.dart';
 import 'teledoc_queue_screen.dart';
 import 'teledoc_request_detail_screen.dart';
 import 'teledoc_request_form_screen.dart';
+import 'teledoc_pharmacy_screen.dart';
 
 /// Patient space: requests (with the active one highlighted) and the
 /// consultation history (prescriptions).
@@ -99,6 +100,18 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const ServiceBadge(ServiceType.teleDoc),
+          actions: [
+            IconButton(
+              tooltip: 'Pharmacies de garde',
+              icon: const Icon(Icons.local_pharmacy_outlined),
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      TeledocPharmacyScreen(repository: widget.repository),
+                ),
+              ),
+            ),
+          ],
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Mes demandes'),

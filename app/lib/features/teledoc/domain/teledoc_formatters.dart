@@ -33,3 +33,10 @@ String teledocDuration(String startIso, String? endIso) {
   final minutes = end.difference(start).inMinutes;
   return minutes < 1 ? 'Moins d\'1 min' : '$minutes min';
 }
+
+/// `850 m` / `1,2 km` (French decimal comma).
+String teledocDistance(double? km) {
+  if (km == null) return '—';
+  if (km < 1) return '${((km * 1000) / 10).round() * 10} m';
+  return '${km.toStringAsFixed(1).replaceAll('.', ',')} km';
+}

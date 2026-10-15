@@ -43,6 +43,9 @@ conception : modèle de données, API REST, machine à états et file d'attente.
 | D34 | **Appel via Jitsi Meet**, ouvert hors de l'app (application Jitsi Meet si installée, sinon navigateur) avec `url_launcher` ; instance configurable (`--dart-define=TELEDOC_JITSI_URL`, défaut `https://meet.jit.si`). Voir §8. | Aucun serveur de signalisation ni TURN à héberger, chiffrement et NAT gérés par Jitsi ; démo fiable sur émulateur. | WebRTC natif (`flutter_webrtc`) : signalisation + STUN/TURN à écrire et héberger. SDK Jitsi natif : très lourd, bibliothèques natives à risque sur l'image Android 16 Ko. WebView : connexion Google interdite en WebView (modérateur meet.jit.si). |
 | D35 | **Salle d'appel = secret** : le serveur tire 16 octets aléatoires (`Random.secure`) par consultation (`ProxiLifeTeleDoc` + 32 hex) ; la salle n'est envoyée **qu'au patient et au médecin** de la consultation, et **seulement tant qu'elle est ouverte** (`null` après la fin ou l'interruption). L'app revérifie le format avant de construire l'URL. Les permissions caméra/micro sont demandées par l'app qui capture (Jitsi ou navigateur) : ProxiLife ne les déclare pas. | Connaître le nom de salle donne accès à l'appel : il doit être impossible à deviner. Moindre privilège pour les permissions. | Salle dérivée de l'id (devinable). Déclarer CAMERA/RECORD_AUDIO sans les utiliser. |
 | D36 | Migration **idempotente** : `upgradeTeledocSchema` crée les tables manquantes (`IF NOT EXISTS`) et ajoute `salle_appel` si absente (les consultations ouvertes reçoivent une salle) ; la base passe en version 3. | FoodSave utilise aussi la « version 2 » : à la fusion, l'ordre et le numéro final n'auront pas d'importance pour TeleDoc. | `ALTER TABLE` conditionné à un numéro de version précis : casse si un autre module prend ce numéro. |
+| D37 | L'ordonnance ne peut être envoyée qu'à une pharmacie **de garde** (vérifié par le serveur, 409 sinon) ; le patient peut changer de pharmacie ensuite. | Le but est d'obtenir le médicament maintenant (nuit, week-end). Validation serveur, l'app n'est qu'un confort. | Accepter toute pharmacie : l'ordonnance pourrait partir vers une officine fermée. |
+| D38 | Carte **`flutter_map` + tuiles OpenStreetMap** (sans clé d'API), `userAgentPackageName` renseigné et attribution « © OpenStreetMap contributors » affichée (politique d'usage OSM). Mêmes versions que FoodSave (`flutter_map ^8.3.2`, `latlong2 ^0.10.1`, `geolocator ^14.1.1`) et mêmes lignes de permission dans le manifeste. | Décision imposée (pas de clé), et zéro conflit de versions à la fusion avec FoodSave. | Google Maps : clé d'API et facturation. |
+| D39 | GPS : lecture **ponctuelle** en haute précision (10 s max, puis dernière position connue). En cas de refus, de service coupé ou d'échec : **repli sur Tunis centre**, bandeau explicatif et bouton « Réglages » / « Réessayer » ; la liste reste utilisable. Itinéraire : lien `geo:` (l'utilisateur choisit son app de cartes), sinon itinéraire OpenStreetMap dans le navigateur ; appel via `tel:` (pas de permission CALL_PHONE). | Un refus de permission ne doit jamais bloquer la recherche. La précision « medium » passe par le fournisseur réseau, que l'émulateur ne simule pas. Moindre privilège. | Bloquer l'écran sans position. Calcul d'itinéraire maison (service de routage à héberger). |
 
 ## 1. Diagramme de classes
 
@@ -582,3 +585,34 @@ sequenceDiagram
 - **Échec d'ouverture** (aucune app capable) : message et bouton « Copier le lien ».
 - **Instance** : `--dart-define=TELEDOC_JITSI_URL=https://…` permet une instance auto-hébergée (sans compte modérateur) sans modifier le code. Seules les URL HTTPS sont acceptées.
 - **Limite assumée** : la qualité de l'appel dépend du réseau et de l'instance publique ; la consultation (ordonnance, durée) reste gérée par ProxiLife même si l'appel échoue (le médecin peut passer en audio ou déclarer le patient absent).
+
+## 9. Pharmacie de garde la plus proche (Étape 10)
+
+```mermaid
+sequenceDiagram
+    actor P as Patient
+    participant App as App ProxiLife
+    participant GPS as geolocator
+    participant S as Serveur TeleDoc
+    participant OSM as Tuiles OpenStreetMap
+
+    P->>App: « Trouver une pharmacie de garde »
+    App->>GPS: position (permission demandée si besoin)
+    alt position obtenue
+        GPS-->>App: lat, lng
+    else refus / service coupé / délai dépassé
+        App->>App: repli Tunis centre + bandeau « Réglages »
+    end
+    App->>S: GET /teledoc/pharmacies/on-duty?lat&lng&limit=8
+    S->>S: filtre de_garde = 1, tri Haversine
+    S-->>App: pharmacies + distance_km
+    App->>OSM: tuiles de la carte (User-Agent com.proxilife.app)
+    P->>App: « Envoyer mon ordonnance ici »
+    App->>S: PATCH /teledoc/consultations/:id/pharmacy
+    S-->>App: 200 (409 si la pharmacie n'est pas de garde)
+```
+
+- **Distance** : calculée côté serveur (formule de Haversine, `GeoDistance` partagé et testé), affichée « 850 m » / « 1,2 km ».
+- **Carte** : repères numérotés identiques à ceux de la liste. Toucher une carte de la liste centre la carte sur la pharmacie, et toucher un repère la met en évidence dans la liste. Le point bleu indique la position utilisée.
+- **Deux points d'entrée** : l'écran « Consultation » terminée (envoi de l'ordonnance, ou « Changer de pharmacie ») et l'icône pharmacie de l'accueil TeleDoc (consultation libre, sans envoi).
+- **Démo sur émulateur** : envoyer **une** position avant d'ouvrir l'écran (`adb emu geo fix 10.3240 36.8790` pour La Marsa). Une rafale de `geo fix` pendant l'enregistrement du GPS peut bloquer le service de localisation de l'émulateur (constaté sur l'image Android 37).

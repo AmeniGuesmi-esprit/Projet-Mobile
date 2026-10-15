@@ -8,6 +8,7 @@ import '../../../domain/teledoc_formatters.dart';
 import '../../../domain/teledoc_repository.dart';
 import '../../widgets/teledoc_async_view.dart';
 import '../../widgets/teledoc_chips.dart';
+import 'teledoc_pharmacy_screen.dart';
 
 /// Patient: a past consultation and its prescription.
 class TeledocConsultationDetailScreen extends StatefulWidget {
@@ -38,6 +39,19 @@ class _TeledocConsultationDetailScreenState
   void _reload() => setState(() {
     _future = widget.repository.consultation(widget.consultationId);
   });
+
+  Future<void> _choosePharmacy(TeledocConsultationDto c) async {
+    final updated = await Navigator.of(context).push<TeledocConsultationDto>(
+      MaterialPageRoute(
+        builder: (_) => TeledocPharmacyScreen(
+          repository: widget.repository,
+          consultationId: c.id,
+          selectedPharmacyId: c.idPharmacie,
+        ),
+      ),
+    );
+    if (updated != null && mounted) _reload();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -118,6 +132,19 @@ class _TeledocConsultationDetailScreenState
                       ),
                     ),
                   ],
+                ),
+              ),
+            ],
+            if (c.statutDemande == TeledocRequestStatus.terminee &&
+                c.ordonnance != null) ...[
+              const SizedBox(height: AppSpacing.lg),
+              FilledButton.icon(
+                onPressed: () => _choosePharmacy(c),
+                icon: const Icon(Icons.local_pharmacy_outlined),
+                label: Text(
+                  c.pharmacieNom == null
+                      ? 'Trouver une pharmacie de garde'
+                      : 'Changer de pharmacie',
                 ),
               ),
             ],

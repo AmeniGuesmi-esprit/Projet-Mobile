@@ -19,6 +19,10 @@ dependencies:
   intl: ^0.20.3
   # TeleDoc: opens the Jitsi call and the itinerary in another app.
   url_launcher: ^6.3.3
+  # TeleDoc pharmacies (same versions as FoodSave): GPS + OpenStreetMap map.
+  geolocator: ^14.1.1
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
   proxilife_shared:
     path: ../packages/proxilife_shared
 

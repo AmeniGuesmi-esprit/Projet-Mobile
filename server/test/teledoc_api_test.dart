@@ -446,6 +446,12 @@ void main() {
           'PATCH', '/teledoc/consultations/$c/pharmacy',
           body: {'id_pharmacie': 999}, token: patient);
       expect(unknown, 404);
+      // #8 (Bab Saadoun) is closed tonight.
+      final (closed, closedBody) = await server.call(
+          'PATCH', '/teledoc/consultations/$c/pharmacy',
+          body: {'id_pharmacie': 8}, token: patient);
+      expect(closed, 409);
+      expect(closedBody['error'], contains('pas de garde'));
       final (status, body) = await server.call(
           'PATCH', '/teledoc/consultations/$c/pharmacy',
           body: {'id_pharmacie': 2}, token: patient);

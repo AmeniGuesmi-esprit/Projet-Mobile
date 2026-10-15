@@ -428,7 +428,8 @@ class TeledocService {
     });
   }
 
-  /// Patient: sends the prescription to a pharmacy (after the consultation).
+  /// Patient: sends the prescription to an on-duty pharmacy (after the
+  /// consultation). Can be changed later (another pharmacy).
   Future<TeledocConsultationDto> choosePharmacy(
     TeledocUser user,
     int id, {
@@ -440,8 +441,12 @@ class TeledocService {
       throw ApiError.conflict(
           'L\'ordonnance n\'est disponible qu\'après la consultation');
     }
-    if (await pharmacies.findById(pharmacyId) == null) {
-      throw ApiError.notFound('Pharmacie introuvable');
+    final pharmacy = await pharmacies.findById(pharmacyId);
+    if (pharmacy == null) throw ApiError.notFound('Pharmacie introuvable');
+    // The prescription must be usable now: only on-duty pharmacies (D37).
+    if (pharmacy['de_garde'] != 1) {
+      throw ApiError.conflict(
+          'Cette pharmacie n\'est pas de garde : choisissez-en une autre');
     }
     await consultations.update(id, {'pharmacie_id': pharmacyId});
     return getConsultation(user, id);
