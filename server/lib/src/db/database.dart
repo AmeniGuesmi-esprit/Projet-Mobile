@@ -21,7 +21,7 @@ class AppDatabase {
     final db = await databaseFactory.openDatabase(
       absolute,
       options: OpenDatabaseOptions(
-        version: 2, // v2 : tables TeleDoc (teledoc_schema.dart)
+        version: 3, // v2-v3 : TeleDoc (teledoc_schema.dart)
         onConfigure: _enableForeignKeys,
         onCreate: (db, version) async => _createSchema(db),
         onUpgrade: upgradeTeledocSchema,
@@ -36,7 +36,7 @@ class AppDatabase {
     final db = await databaseFactory.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 2, // v2 : tables TeleDoc (teledoc_schema.dart)
+        version: 3, // v2-v3 : TeleDoc (teledoc_schema.dart)
         onConfigure: _enableForeignKeys,
         onCreate: (db, version) async => _createSchema(db),
         onUpgrade: upgradeTeledocSchema,

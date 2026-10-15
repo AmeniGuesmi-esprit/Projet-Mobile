@@ -1,11 +1,13 @@
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-/// Schema version that introduced the TeleDoc tables.
-const int teledocSchemaVersion = 2;
+/// Database version required by the current TeleDoc schema
+/// (v2 : TeleDoc tables, v3 : `salle_appel`).
+const int teledocSchemaVersion = 3;
 
 /// Creates the TeleDoc Express tables and indexes (see
 /// `docs/teledoc/CONCEPTION.md` §2). Called by `AppDatabase` on a fresh
-/// database (`onCreate`) and when upgrading from version 1 (`onUpgrade`).
+/// database (`onCreate`) and, through [upgradeTeledocSchema], on upgrades.
+/// Every statement is idempotent (`IF NOT EXISTS`).
 ///
 /// - `position_file` / `temps_estime` are not stored: they are derived from
 ///   the queue on every read (decision D2).
@@ -16,7 +18,7 @@ const int teledocSchemaVersion = 2;
 ///   (a real DELETE in the User module) is never blocked (decision D8).
 Future<void> createTeledocSchema(DatabaseExecutor db) async {
   await db.execute('''
-CREATE TABLE teledoc_pharmacie (
+CREATE TABLE IF NOT EXISTS teledoc_pharmacie (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nom TEXT NOT NULL,
   adresse TEXT NOT NULL,
@@ -28,7 +30,7 @@ CREATE TABLE teledoc_pharmacie (
 ''');
 
   await db.execute('''
-CREATE TABLE teledoc_demande (
+CREATE TABLE IF NOT EXISTS teledoc_demande (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   motif TEXT NOT NULL,
   description TEXT NOT NULL,
@@ -44,7 +46,7 @@ CREATE TABLE teledoc_demande (
 ''');
 
   await db.execute('''
-CREATE TABLE teledoc_consultation (
+CREATE TABLE IF NOT EXISTS teledoc_consultation (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   date_debut TEXT NOT NULL,
   date_fin TEXT,
@@ -53,37 +55,49 @@ CREATE TABLE teledoc_consultation (
   pharmacie_id INTEGER REFERENCES teledoc_pharmacie(id) ON DELETE SET NULL,
   demande_id INTEGER NOT NULL UNIQUE
     REFERENCES teledoc_demande(id) ON DELETE CASCADE,
-  medecin_id INTEGER REFERENCES utilisateur(id) ON DELETE SET NULL
+  medecin_id INTEGER REFERENCES utilisateur(id) ON DELETE SET NULL,
+  salle_appel TEXT
 )
 ''');
 
   await db.execute(
-    'CREATE INDEX teledoc_demande_file_idx ON teledoc_demande(statut, cree_le)',
+    'CREATE INDEX IF NOT EXISTS teledoc_demande_file_idx ON teledoc_demande(statut, cree_le)',
   );
   await db.execute(
-    'CREATE INDEX teledoc_demande_patient_idx ON teledoc_demande(patient_id)',
+    'CREATE INDEX IF NOT EXISTS teledoc_demande_patient_idx ON teledoc_demande(patient_id)',
   );
   await db.execute(
-    'CREATE INDEX teledoc_consultation_medecin_idx '
+    'CREATE INDEX IF NOT EXISTS teledoc_consultation_medecin_idx '
     'ON teledoc_consultation(medecin_id)',
   );
   // At most one open consultation per doctor, enforced by SQLite itself.
   await db.execute(
-    'CREATE UNIQUE INDEX teledoc_consultation_une_en_cours '
+    'CREATE UNIQUE INDEX IF NOT EXISTS teledoc_consultation_une_en_cours '
     'ON teledoc_consultation(medecin_id) WHERE date_fin IS NULL',
   );
   await db.execute(
-    'CREATE INDEX teledoc_pharmacie_garde_idx ON teledoc_pharmacie(de_garde)',
+    'CREATE INDEX IF NOT EXISTS teledoc_pharmacie_garde_idx ON teledoc_pharmacie(de_garde)',
   );
 }
 
-/// `onUpgrade` hook: adds the TeleDoc tables to a version-1 database.
+/// `onUpgrade` hook. Brings any older database to the current TeleDoc
+/// schema without depending on the exact version number: tables are created
+/// if missing, columns added if missing. The order in which modules are
+/// merged (and the final version number) therefore does not matter (D36).
 Future<void> upgradeTeledocSchema(
   DatabaseExecutor db,
   int oldVersion,
   int newVersion,
 ) async {
-  if (oldVersion < teledocSchemaVersion) {
-    await createTeledocSchema(db);
+  await createTeledocSchema(db);
+  final columns = await db.rawQuery('PRAGMA table_info(teledoc_consultation)');
+  if (!columns.any((c) => c['name'] == 'salle_appel')) {
+    await db.execute(
+        'ALTER TABLE teledoc_consultation ADD COLUMN salle_appel TEXT');
+    // Consultations still open at upgrade time get a room immediately.
+    await db.execute(
+      "UPDATE teledoc_consultation SET salle_appel = 'ProxiLifeTeleDoc' || "
+      'lower(hex(randomblob(16))) WHERE date_fin IS NULL',
+    );
   }
 }

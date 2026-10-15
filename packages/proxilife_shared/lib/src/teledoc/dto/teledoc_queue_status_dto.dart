@@ -10,6 +10,7 @@ class TeledocQueueStatusDto {
     this.taille,
     this.consultationId,
     this.typeConsultation,
+    this.salleAppel,
   });
 
   final int idDemande;
@@ -24,6 +25,9 @@ class TeledocQueueStatusDto {
   final int? consultationId;
   final TeledocConsultationType? typeConsultation;
 
+  /// Call room, set while the consultation is in progress.
+  final String? salleAppel;
+
   factory TeledocQueueStatusDto.fromJson(Map<String, dynamic> json) =>
       TeledocQueueStatusDto(
         idDemande: json['id_demande'] as int,
@@ -36,6 +40,7 @@ class TeledocQueueStatusDto {
             ? null
             : TeledocConsultationType.parse(
                 json['type_consultation'] as String),
+        salleAppel: json['salle_appel'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -46,5 +51,6 @@ class TeledocQueueStatusDto {
         'taille_file': taille,
         'consultation_id': consultationId,
         'type_consultation': typeConsultation?.apiValue,
+        'salle_appel': salleAppel,
       };
 }

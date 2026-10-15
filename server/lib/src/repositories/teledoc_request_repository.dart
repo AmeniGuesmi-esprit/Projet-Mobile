@@ -11,7 +11,8 @@ class TeledocRequestRepository {
 
   static const String _select =
       'SELECT d.*, u.prenom AS p_prenom, u.nom AS p_nom, '
-      'c.id AS c_id, c.medecin_id AS c_medecin_id, c.type AS c_type '
+      'c.id AS c_id, c.medecin_id AS c_medecin_id, c.type AS c_type, '
+      'c.salle_appel AS c_salle_appel '
       'FROM teledoc_demande d '
       'JOIN utilisateur u ON u.id = d.patient_id '
       'LEFT JOIN teledoc_consultation c ON c.demande_id = d.id';

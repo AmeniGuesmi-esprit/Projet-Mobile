@@ -88,5 +88,8 @@ class TeledocConsultationRepository {
         motif: row['d_motif'] as String,
         urgence: TeledocUrgency.parse(row['d_urgence'] as String),
         statutDemande: TeledocRequestStatus.parse(row['d_statut'] as String),
+        // The room only opens the call while the consultation is running.
+        salleAppel:
+            row['date_fin'] == null ? row['salle_appel'] as String? : null,
       );
 }

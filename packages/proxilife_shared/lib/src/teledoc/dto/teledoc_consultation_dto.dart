@@ -18,6 +18,7 @@ class TeledocConsultationDto {
     this.idMedecin,
     this.medecinNom,
     this.patientNom,
+    this.salleAppel,
   });
 
   final int id;
@@ -34,6 +35,10 @@ class TeledocConsultationDto {
   final String motif;
   final TeledocUrgency urgence;
   final TeledocRequestStatus statutDemande;
+
+  /// Call room (TeledocCallRoom); only sent while the consultation is open,
+  /// and only to its patient and doctor.
+  final String? salleAppel;
 
   /// `date_fin` is set when the consultation ends (or is interrupted).
   bool get estTerminee => dateFin != null;
@@ -55,6 +60,7 @@ class TeledocConsultationDto {
         urgence: TeledocUrgency.parse(json['urgence'] as String),
         statutDemande:
             TeledocRequestStatus.parse(json['statut_demande'] as String),
+        salleAppel: json['salle_appel'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -72,5 +78,6 @@ class TeledocConsultationDto {
         'motif': motif,
         'urgence': urgence.apiValue,
         'statut_demande': statutDemande.apiValue,
+        'salle_appel': salleAppel,
       };
 }

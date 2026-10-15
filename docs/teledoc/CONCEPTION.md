@@ -40,6 +40,9 @@ conception : modèle de données, API REST, machine à états et file d'attente.
 | D31 | Limite assumée : sans Firebase (interdit par AGENTS.md), pas de push quand l'app est tuée. Les alertes arrivent tant que le processus vit (écran ouvert ou app récemment en arrière-plan), et l'écran invite à garder l'app ouverte. | Contrainte du projet. | FCM : interdit. |
 | D32 | Espace médecin : la file est **consultable en lecture seule** (aperçu motif, description, photo) ; un seul bouton « Démarrer la prochaine consultation » (choix audio/vidéo) qui prend la tête côté serveur. Si une consultation est ouverte, la carte « Consultation en cours » remplace ce bouton. Actualisation manuelle (bouton + tirer vers le bas) et au retour d'écran. | Applique D4 dans l'interface, sans laisser croire qu'on peut choisir un patient. | Bouton « Prendre » sur chaque ligne : contredirait la règle d'équité. |
 | D33 | Écran de consultation du médecin : « Patient absent » (annule + rembourse) et « Remettre en file » (supprime la consultation) dans un menu, **avec confirmation** ; une consultation terminée affiche « Corriger l'ordonnance » mais aucune suppression. | Actions destructives moins accessibles que l'action principale (terminer) ; applique D10 et D17. | Boutons au même niveau que « Terminer » : risque d'erreur de manipulation. |
+| D34 | **Appel via Jitsi Meet**, ouvert hors de l'app (application Jitsi Meet si installée, sinon navigateur) avec `url_launcher` ; instance configurable (`--dart-define=TELEDOC_JITSI_URL`, défaut `https://meet.jit.si`). Voir §8. | Aucun serveur de signalisation ni TURN à héberger, chiffrement et NAT gérés par Jitsi ; démo fiable sur émulateur. | WebRTC natif (`flutter_webrtc`) : signalisation + STUN/TURN à écrire et héberger. SDK Jitsi natif : très lourd, bibliothèques natives à risque sur l'image Android 16 Ko. WebView : connexion Google interdite en WebView (modérateur meet.jit.si). |
+| D35 | **Salle d'appel = secret** : le serveur tire 16 octets aléatoires (`Random.secure`) par consultation (`ProxiLifeTeleDoc` + 32 hex) ; la salle n'est envoyée **qu'au patient et au médecin** de la consultation, et **seulement tant qu'elle est ouverte** (`null` après la fin ou l'interruption). L'app revérifie le format avant de construire l'URL. Les permissions caméra/micro sont demandées par l'app qui capture (Jitsi ou navigateur) : ProxiLife ne les déclare pas. | Connaître le nom de salle donne accès à l'appel : il doit être impossible à deviner. Moindre privilège pour les permissions. | Salle dérivée de l'id (devinable). Déclarer CAMERA/RECORD_AUDIO sans les utiliser. |
+| D36 | Migration **idempotente** : `upgradeTeledocSchema` crée les tables manquantes (`IF NOT EXISTS`) et ajoute `salle_appel` si absente (les consultations ouvertes reçoivent une salle) ; la base passe en version 3. | FoodSave utilise aussi la « version 2 » : à la fusion, l'ordre et le numéro final n'auront pas d'importance pour TeleDoc. | `ALTER TABLE` conditionné à un numéro de version précis : casse si un autre module prend ce numéro. |
 
 ## 1. Diagramme de classes
 
@@ -80,6 +83,7 @@ classDiagram
         +DateTime? dateFin
         +TypeConsultation type
         +String? ordonnance
+        +String? salleAppel
         +bool estTerminee()
     }
     class Pharmacie {
@@ -263,7 +267,8 @@ CREATE TABLE teledoc_consultation (
   ordonnance    TEXT,
   pharmacie_id  INTEGER REFERENCES teledoc_pharmacie(id) ON DELETE SET NULL,
   demande_id    INTEGER NOT NULL UNIQUE REFERENCES teledoc_demande(id) ON DELETE CASCADE,
-  medecin_id    INTEGER REFERENCES utilisateur(id) ON DELETE SET NULL
+  medecin_id    INTEGER REFERENCES utilisateur(id) ON DELETE SET NULL,
+  salle_appel   TEXT                            -- v3 : salle Jitsi aléatoire (D35)
 );
 
 -- File d'attente : filtre sur le statut, tri par date.
@@ -459,6 +464,7 @@ sequenceDiagram
 - Photo : base64 valide, ≤ 2 Mo décodés, signature JPEG/PNG, nom aléatoire (`Random.secure`, 16 octets hex), servie uniquement à travers l'endpoint authentifié.
 - Validation : `motif` 3–80 caractères, `description` 10–1000, `urgence` et `type` dans leur enum, `ordonnance` 3–2000, `lat`/`lng` dans leurs bornes.
 - Prise de la tête de file dans une transaction SQLite + index unique partiel (D5).
+- Salle d'appel : 128 bits aléatoires, visible du seul patient et du seul médecin concernés, effacée des réponses dès la fin de la consultation (D35).
 
 ## 7. Paiement : passerelle vers le module de Fawzi
 
@@ -536,3 +542,43 @@ avec Fawzi, **le mock reste l'implémentation par défaut**.
 
 L'**Étape 11** devient : brancher l'adaptateur réel sur l'API de Fawzi quand
 elle sera prête. Aucun développement de paiement dans TeleDoc.
+
+## 8. Appel audio / vidéo (Étape 9)
+
+### 8.1 Choix : Jitsi Meet plutôt que WebRTC « à la main »
+
+1. Jitsi fournit tout le WebRTC (signalisation, STUN/TURN, chiffrement) : rien à héberger ni à maintenir, là où `flutter_webrtc` impose d'écrire et d'héberger la signalisation et un relais TURN.
+2. Ouvert par une simple URL (app Jitsi Meet ou navigateur), il marche sur l'émulateur comme sur un vrai téléphone, sans SDK natif lourd ni risque de compatibilité (image Android 16 Ko).
+3. Le code TeleDoc se limite à ce qui relève du métier : une salle secrète par consultation, contrôlée par le serveur (D35).
+
+### 8.2 Déroulement
+
+```mermaid
+sequenceDiagram
+    actor M as Médecin
+    actor P as Patient
+    participant App as App ProxiLife
+    participant S as Serveur TeleDoc
+    participant J as Jitsi Meet
+
+    M->>S: POST /teledoc/consultations {type}
+    S->>S: salle = ProxiLifeTeleDoc + 16 octets aléatoires
+    S-->>M: 201 ConsultationDto {salle_appel}
+    M->>J: « Rejoindre l'appel » → https://meet.jit.si/<salle>#config…
+    Note over M,J: meet.jit.si : le médecin (modérateur) se connecte une fois
+    loop toutes les 5 s
+        App->>S: GET /teledoc/requests/:id/queue-status
+        S-->>App: {statut: en_cours, salle_appel}
+    end
+    P->>J: « Rejoindre l'appel » (même salle, invité sans compte)
+    M->>S: POST /consultations/:id/end {ordonnance}
+    S-->>M: salle_appel = null (la salle n'est plus distribuée)
+```
+
+### 8.3 Détails
+
+- **Lien** (`TeledocCallLink`, app) : `<instance>/<salle>#config.prejoinConfig.enabled=true&config.disableDeepLinking=true[&config.startWithVideoMuted=true]&userInfo.displayName="…"`. Les options sont dans le fragment `#`, jamais envoyé au serveur Jitsi. En **audio**, la caméra démarre coupée.
+- **Permissions** : l'écran de pré-connexion de Jitsi teste caméra et micro, et c'est Jitsi (ou le navigateur) qui demande l'autorisation Android. Le panneau d'appel explique quoi faire en cas de refus (Réglages › Applications).
+- **Échec d'ouverture** (aucune app capable) : message et bouton « Copier le lien ».
+- **Instance** : `--dart-define=TELEDOC_JITSI_URL=https://…` permet une instance auto-hébergée (sans compte modérateur) sans modifier le code. Seules les URL HTTPS sont acceptées.
+- **Limite assumée** : la qualité de l'appel dépend du réseau et de l'instance publique ; la consultation (ordonnance, durée) reste gérée par ProxiLife même si l'appel échoue (le médecin peut passer en audio ou déclarer le patient absent).

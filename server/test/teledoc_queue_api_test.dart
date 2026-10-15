@@ -221,4 +221,61 @@ void main() {
       expect(other, 404);
     });
   });
+
+  group("Salle d'appel Jitsi (Étape 9)", () {
+    final roomPattern = RegExp(r'^ProxiLifeTeleDoc[0-9a-f]{32}$');
+
+    test('générée au démarrage, visible du patient et du médecin seulement',
+        () async {
+      final id = await request(0, 'moyenne');
+      final (status, consultation) = await start(doctorA);
+      expect(status, 201);
+      final room = consultation['salle_appel'] as String;
+      expect(room, matches(roomPattern));
+
+      // Le patient la reçoit par le polling, sans appel supplémentaire.
+      expect((await queueStatus(0, id))['salle_appel'], room);
+      final cId = consultation['id'];
+      final (_, forPatient) = await server
+          .call('GET', '/teledoc/consultations/$cId', token: patients[0]);
+      expect(forPatient['salle_appel'], room);
+
+      // Ni un autre patient ni un autre médecin n'y ont accès.
+      final (otherPatient, _) = await server
+          .call('GET', '/teledoc/consultations/$cId', token: patients[1]);
+      final (otherDoctor, _) = await server
+          .call('GET', '/teledoc/consultations/$cId', token: doctorB);
+      expect([otherPatient, otherDoctor], [404, 404]);
+    });
+
+    test('une salle différente par consultation', () async {
+      await request(0, 'moyenne');
+      await request(1, 'moyenne');
+      final (_, a) = await start(doctorA);
+      final (_, b) = await start(doctorB);
+      expect(a['salle_appel'], isNot(b['salle_appel']));
+    });
+
+    test('plus envoyée une fois la consultation terminée ou interrompue',
+        () async {
+      final ended = await request(0, 'moyenne');
+      final interrupted = await request(1, 'moyenne');
+      final (_, c1) = await start(doctorA);
+      final (_, c2) = await start(doctorB);
+
+      final (_, end) = await server.call(
+          'POST', '/teledoc/consultations/${c1['id']}/end',
+          body: {'ordonnance': 'Paracétamol 1 g, 3 fois par jour'},
+          token: doctorA);
+      expect(end['salle_appel'], isNull);
+      expect((await queueStatus(0, ended))['salle_appel'], isNull);
+
+      await server.call('POST', '/teledoc/requests/$interrupted/cancel',
+          token: doctorB);
+      final (_, after) = await server
+          .call('GET', '/teledoc/consultations/${c2['id']}', token: doctorB);
+      expect(after['salle_appel'], isNull);
+      expect((await queueStatus(1, interrupted))['salle_appel'], isNull);
+    });
+  });
 }

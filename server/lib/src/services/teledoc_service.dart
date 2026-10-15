@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:proxilife_shared/proxilife_shared.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -254,6 +256,9 @@ class TeledocService {
       consultationId: row['c_id'] as int?,
       typeConsultation:
           cType == null ? null : TeledocConsultationType.parse(cType),
+      salleAppel: _status(row) == TeledocRequestStatus.enCours
+          ? row['c_salle_appel'] as String?
+          : null,
     );
   }
 
@@ -306,6 +311,7 @@ class TeledocService {
           'pharmacie_id': null,
           'demande_id': requestId,
           'medecin_id': user.id,
+          'salle_appel': newCallRoom(),
         }, txn);
       });
     } on DatabaseException catch (e) {
@@ -477,6 +483,17 @@ class TeledocService {
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
+
+  /// A fresh, unguessable Jitsi room (16 secure random bytes = 128 bits):
+  /// the room name is the call's only access key (D35).
+  static String newCallRoom() {
+    final random = Random.secure();
+    final hex = List.generate(
+      16,
+      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+    return '${TeledocCallRoom.prefix}$hex';
+  }
 
   /// Converts rows to DTOs, adding the derived queue position and wait to
   /// waiting requests (one snapshot for the whole list).

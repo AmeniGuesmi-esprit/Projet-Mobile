@@ -1,10 +1,14 @@
 import 'package:proxilife/core/api/api_client.dart';
 import 'package:proxilife/core/session/session_controller.dart';
+import 'package:proxilife/features/teledoc/domain/teledoc_call.dart';
 import 'package:proxilife/features/teledoc/domain/teledoc_queue_tracker.dart';
 import 'package:proxilife/features/teledoc/domain/teledoc_repository.dart';
 import 'package:proxilife_shared/proxilife_shared.dart';
 
 import 'fakes.dart';
+
+/// A room in the server format (TeledocCallRoom).
+const String fakeRoom = 'ProxiLifeTeleDoc0123456789abcdef0123456789abcdef';
 
 TeledocRequestDto fakeRequest({
   int id = 1,
@@ -41,6 +45,7 @@ TeledocConsultationDto fakeConsultation({
   TeledocConsultationType type = TeledocConsultationType.video,
   TeledocRequestStatus? statutDemande,
   String? pharmacieNom,
+  String? salleAppel = fakeRoom,
 }) => TeledocConsultationDto(
   id: id,
   dateDebut: '2026-10-14T09:30:00.000',
@@ -58,6 +63,7 @@ TeledocConsultationDto fakeConsultation({
   statutDemande:
       statutDemande ??
       (ended ? TeledocRequestStatus.terminee : TeledocRequestStatus.enCours),
+  salleAppel: ended ? null : salleAppel,
 );
 
 TeledocQueueStatusDto fakeStatus({
@@ -67,6 +73,7 @@ TeledocQueueStatusDto fakeStatus({
   int? wait = 30,
   int? consultationId,
   TeledocConsultationType? type,
+  String? salleAppel = fakeRoom,
 }) => TeledocQueueStatusDto(
   idDemande: idDemande,
   statut: statut,
@@ -75,6 +82,7 @@ TeledocQueueStatusDto fakeStatus({
   taille: 4,
   consultationId: consultationId,
   typeConsultation: type,
+  salleAppel: statut == TeledocRequestStatus.enCours ? salleAppel : null,
 );
 
 /// In-memory [TeledocRepository] recording calls. Set [nextError] to make
@@ -305,6 +313,19 @@ class FakeTeledocRepository implements TeledocRepository {
   void _replace(TeledocConsultationDto c) => consultationList = [
     for (final x in consultationList) x.id == c.id ? c : x,
   ];
+}
+
+/// Records the links the app tries to open; [succeeds] simulates a device
+/// without any app able to open them.
+class RecordingLinkOpener implements TeledocLinkOpener {
+  final List<Uri> opened = [];
+  bool succeeds = true;
+
+  @override
+  Future<bool> open(Uri uri) async {
+    opened.add(uri);
+    return succeeds;
+  }
 }
 
 class RecordingNotifier implements TeledocQueueNotifier {

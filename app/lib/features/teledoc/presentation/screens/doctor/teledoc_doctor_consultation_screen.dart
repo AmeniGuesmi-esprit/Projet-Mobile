@@ -4,9 +4,12 @@ import 'package:proxilife_shared/proxilife_shared.dart';
 import '../../../../../core/theme/app_colors.dart';
 import '../../../../../core/theme/app_spacing.dart';
 import '../../../../../core/widgets/primary_button.dart';
+import '../../../data/url_launcher_link_opener.dart';
+import '../../../domain/teledoc_call.dart';
 import '../../../domain/teledoc_formatters.dart';
 import '../../../domain/teledoc_repository.dart';
 import '../../widgets/teledoc_async_view.dart';
+import '../../widgets/teledoc_call_panel.dart';
 import '../../widgets/teledoc_chips.dart';
 import '../../widgets/teledoc_photo.dart';
 
@@ -28,10 +31,14 @@ class TeledocDoctorConsultationScreen extends StatefulWidget {
     super.key,
     required this.repository,
     required this.consultationId,
+    this.linkOpener = const UrlLauncherLinkOpener(),
   });
 
   final TeledocRepository repository;
   final int consultationId;
+
+  /// Opens the Jitsi call (faked in tests).
+  final TeledocLinkOpener linkOpener;
 
   @override
   State<TeledocDoctorConsultationScreen> createState() =>
@@ -245,30 +252,37 @@ class _TeledocDoctorConsultationScreenState
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            TeledocSection(
-              title: 'Appel',
-              trailing: inProgress
-                  ? TextButton(
-                      onPressed: _busy ? null : () => _switchType(c),
-                      child: Text(
-                        c.type == TeledocConsultationType.video
-                            ? 'Passer en audio'
-                            : 'Passer en vidéo',
-                      ),
-                    )
-                  : null,
-              child: Column(
-                children: [
-                  TeledocInfoRow('Type', c.type.label),
-                  TeledocInfoRow('Début', teledocDate(c.dateDebut)),
-                  if (c.estTerminee)
+            if (inProgress)
+              TeledocCallPanel(
+                room: c.salleAppel,
+                type: c.type,
+                opener: widget.linkOpener,
+                displayName: c.medecinNom == null ? null : 'Dr ${c.medecinNom}',
+                isDoctor: true,
+                trailing: TextButton(
+                  onPressed: _busy ? null : () => _switchType(c),
+                  child: Text(
+                    c.type == TeledocConsultationType.video
+                        ? 'Passer en audio'
+                        : 'Passer en vidéo',
+                  ),
+                ),
+                details: [TeledocInfoRow('Début', teledocDate(c.dateDebut))],
+              )
+            else
+              TeledocSection(
+                title: 'Appel',
+                child: Column(
+                  children: [
+                    TeledocInfoRow('Type', c.type.label),
+                    TeledocInfoRow('Début', teledocDate(c.dateDebut)),
                     TeledocInfoRow(
                       'Durée',
                       teledocDuration(c.dateDebut, c.dateFin),
                     ),
-                ],
+                  ],
+                ),
               ),
-            ),
             const SizedBox(height: AppSpacing.md),
             TeledocSection(
               title: 'Symptômes décrits',

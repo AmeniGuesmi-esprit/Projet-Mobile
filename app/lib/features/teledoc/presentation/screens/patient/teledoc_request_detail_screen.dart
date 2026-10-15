@@ -227,7 +227,8 @@ class _TeledocRequestDetailScreenState
   List<Widget> _actions(TeledocRequestDto request) {
     final consultationId = request.consultationId;
     return [
-      if (request.statut == TeledocRequestStatus.enAttente) ...[
+      if (request.statut == TeledocRequestStatus.enAttente ||
+          request.statut == TeledocRequestStatus.enCours) ...[
         FilledButton.icon(
           onPressed: () => Navigator.of(context).push<void>(
             MaterialPageRoute(
@@ -238,8 +239,16 @@ class _TeledocRequestDetailScreenState
               ),
             ),
           ),
-          icon: const Icon(Icons.groups_outlined),
-          label: const Text('Suivre la file en direct'),
+          icon: Icon(
+            request.statut == TeledocRequestStatus.enCours
+                ? Icons.videocam_outlined
+                : Icons.groups_outlined,
+          ),
+          label: Text(
+            request.statut == TeledocRequestStatus.enCours
+                ? "Rejoindre l'appel"
+                : 'Suivre la file en direct',
+          ),
         ),
         const SizedBox(height: AppSpacing.sm),
       ],

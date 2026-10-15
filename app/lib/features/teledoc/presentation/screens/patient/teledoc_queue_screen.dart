@@ -6,11 +6,14 @@ import '../../../../../core/theme/app_colors.dart';
 import '../../../../../core/theme/app_spacing.dart';
 import '../../../../../core/widgets/service_badge.dart';
 import '../../../data/teledoc_local_queue_notifier.dart';
+import '../../../data/url_launcher_link_opener.dart';
+import '../../../domain/teledoc_call.dart';
 import '../../../domain/teledoc_formatters.dart';
 import '../../../domain/teledoc_queue_tracker.dart';
 import '../../../domain/teledoc_repository.dart';
 import '../../controllers/teledoc_queue_controller.dart';
 import '../../widgets/teledoc_async_view.dart';
+import '../../widgets/teledoc_call_panel.dart';
 import 'teledoc_consultation_detail_screen.dart';
 import 'teledoc_request_detail_screen.dart';
 
@@ -24,6 +27,7 @@ class TeledocQueueScreen extends StatefulWidget {
     this.notifier,
     this.enableNotifications,
     this.pollInterval = const Duration(seconds: 5),
+    this.linkOpener = const UrlLauncherLinkOpener(),
   });
 
   final SessionController session;
@@ -36,6 +40,9 @@ class TeledocQueueScreen extends StatefulWidget {
   /// Injected in tests; defaults to the Android permission request.
   final Future<bool> Function()? enableNotifications;
   final Duration pollInterval;
+
+  /// Opens the Jitsi call (faked in tests).
+  final TeledocLinkOpener linkOpener;
 
   @override
   State<TeledocQueueScreen> createState() => _TeledocQueueScreenState();
@@ -85,6 +92,11 @@ class _TeledocQueueScreenState extends State<TeledocQueueScreen> {
           ? 'Vous serez prévenu quand ce sera bientôt votre tour'
           : 'Activez les notifications dans les réglages Android',
     );
+  }
+
+  String? get _patientName {
+    final user = widget.session.user;
+    return user == null ? null : '${user.prenom} ${user.nom}';
   }
 
   void _openDetails() => Navigator.of(context).push<void>(
@@ -217,10 +229,17 @@ class _TeledocQueueScreenState extends State<TeledocQueueScreen> {
             message:
                 'Votre consultation '
                 '${status.typeConsultation?.label.toLowerCase() ?? ''} '
-                'a commencé.',
+                "a commencé : rejoignez l'appel.",
+          ),
+          const SizedBox(height: AppSpacing.md),
+          TeledocCallPanel(
+            room: status.salleAppel,
+            type: status.typeConsultation ?? TeledocConsultationType.video,
+            opener: widget.linkOpener,
+            displayName: _patientName,
           ),
           const SizedBox(height: AppSpacing.lg),
-          FilledButton.icon(
+          OutlinedButton.icon(
             onPressed: _openDetails,
             icon: const Icon(Icons.description_outlined),
             label: const Text('Voir ma demande'),
