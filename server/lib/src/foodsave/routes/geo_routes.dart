@@ -1,3 +1,4 @@
+import 'package:proxilife_shared/proxilife_shared.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
@@ -37,6 +38,28 @@ Router buildFoodSaveGeoRoutes(FoodSaveContext ctx) {
     return guard(() async {
       await geo.clearLocation(request.userId);
       return Response(204);
+    });
+  });
+
+  // ---- Adresse d'une position (formulaire du commerce) ----
+
+  router.get('/foodsave/geo/reverse', (Request request) {
+    return guard(() async {
+      final q = request.url.queryParameters;
+      final lat = double.tryParse(q['lat'] ?? '');
+      final lng = double.tryParse(q['lng'] ?? '');
+      if (lat == null || lng == null || !isValidLatLng(lat, lng)) {
+        throw ApiError.badRequest('Coordonnées GPS invalides');
+      }
+      final geocoder = ctx.geocoder;
+      if (geocoder == null) {
+        throw ApiError(503, 'Recherche d\'adresse indisponible');
+      }
+      final adresse = await geocoder.reverse(lat, lng);
+      if (adresse == null) {
+        throw ApiError.notFound('Aucune adresse trouvée pour cette position');
+      }
+      return jsonResponse({'adresse': adresse});
     });
   });
 

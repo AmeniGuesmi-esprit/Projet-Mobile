@@ -5,8 +5,10 @@ import 'package:proxilife_shared/proxilife_shared.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../api_error.dart';
+import '../email/email_sender.dart';
 import '../repositories/user_repository.dart';
 import '../services/payment_service.dart';
+import 'services/reverse_geocoder.dart';
 
 /// Dependencies shared by every FoodSave service. Built once in `buildApp`.
 class FoodSaveContext {
@@ -16,6 +18,8 @@ class FoodSaveContext {
     required this.payments,
     required this.uploadsDir,
     this.qrTtl = const Duration(minutes: 30),
+    this.mailer,
+    this.geocoder,
     DateTime Function()? clock,
   }) : _clock = clock ?? DateTime.now {
     journal = FoodSaveJournal(db, now);
@@ -33,6 +37,12 @@ class FoodSaveContext {
 
   /// QR lifetime once the pickup window is open (see FoodSaveRules.qrExpiry).
   final Duration qrTtl;
+
+  /// E-mails the pickup QR code to the client once paid (null: no e-mail).
+  final ReservationMailer? mailer;
+
+  /// GPS → address for the store form (null: feature unavailable).
+  final ReverseGeocoder? geocoder;
 
   final DateTime Function() _clock;
 

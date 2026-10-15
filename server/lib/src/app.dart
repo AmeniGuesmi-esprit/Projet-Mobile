@@ -54,6 +54,7 @@ Handler buildApp(
         users: users,
         payments: payments,
         uploadsDir: uploadsDir,
+        mailer: switch (sender) { ReservationMailer m => m, _ => null },
       );
 
   final router = Router()

@@ -5,7 +5,6 @@ import 'package:proxilife_shared/proxilife_shared.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/money_text.dart';
-import '../../../../core/widgets/status_chip.dart';
 import '../../data/foodsave_api.dart';
 import '../../widgets/foodsave_ui.dart';
 import '../widgets/client_format.dart';
@@ -105,7 +104,7 @@ class ReservationCard extends StatelessWidget {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             ReservationStatusChip(r.statut),
-                            StatusChip(r.statutPaiement),
+                            ReservationPaymentChip(r),
                             if (showCountdown)
                               _CountdownChip(expiry: expiry, now: now),
                           ],

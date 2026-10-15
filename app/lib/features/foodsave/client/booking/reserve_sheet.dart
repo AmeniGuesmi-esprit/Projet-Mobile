@@ -245,7 +245,8 @@ class _ReserveSheetState extends State<ReserveSheet> {
                           ReserveStep.quantity => _quantityStep(context),
                           ReserveStep.payment => _paymentStep(context),
                           ReserveStep.summary => _summaryStep(context),
-                          ReserveStep.success => const _SuccessView(),
+                          ReserveStep.success =>
+                            _SuccessView(email: widget.session.user?.email),
                         },
                       ),
                     ),
@@ -812,7 +813,10 @@ class _ErrorPanel extends StatelessWidget {
 }
 
 class _SuccessView extends StatelessWidget {
-  const _SuccessView();
+  const _SuccessView({this.email});
+
+  /// Where the server e-mailed the QR code (shown when known).
+  final String? email;
 
   @override
   Widget build(BuildContext context) {
@@ -822,7 +826,8 @@ class _SuccessView extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
       child: Semantics(
         liveRegion: true,
-        label: 'Réservation confirmée. Votre QR code est prêt.',
+        label: 'Réservation confirmée. Votre QR code est prêt.'
+            '${email == null ? '' : ' Envoyé aussi par e-mail à $email.'}',
         excludeSemantics: true,
         child: Column(
           children: [
@@ -849,6 +854,30 @@ class _SuccessView extends StatelessWidget {
                 style: theme.textTheme.bodyMedium
                     ?.copyWith(color: AppColors.textSecondaryStrong),
                 textAlign: TextAlign.center),
+            if (email != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+                decoration: BoxDecoration(
+                  color: AppColors.moduleFoodSaveSoft,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.forward_to_inbox_outlined,
+                        size: 18, color: AppColors.moduleFoodSaveDeep),
+                    const SizedBox(width: AppSpacing.xs),
+                    Flexible(
+                      child: Text('Envoyé aussi par e-mail à $email',
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: AppColors.text)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),

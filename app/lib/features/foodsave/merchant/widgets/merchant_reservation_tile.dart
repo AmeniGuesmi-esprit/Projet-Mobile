@@ -6,7 +6,6 @@ import 'package:proxilife_shared/proxilife_shared.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/money_text.dart';
-import '../../../../core/widgets/status_chip.dart';
 import '../../widgets/foodsave_ui.dart';
 import 'merchant_format.dart';
 
@@ -105,7 +104,8 @@ class MerchantReservationTile extends StatelessWidget {
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       ReservationStatusChip(r.statut),
-                      StatusChip(r.statutPaiement),
+                      ReservationPaymentChip(r,
+                          cashLabel: 'Espèces à encaisser'),
                       if (active && expiry != null)
                         ExpiryCountdown(expiresAt: expiry),
                       if (r.statut == ReservationStatus.retire &&

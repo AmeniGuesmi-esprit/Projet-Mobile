@@ -109,6 +109,7 @@ SERVER_PORT=8080
 | sqflite_common_ffi | ^2.4.3 | server |
 | crypto | ^3.0.7 | server |
 | mailer | ^7.2.0 | server |
+| qr | ^3.0.2 | server (QR PNG in reservation e-mails) |
 | path | ^1.9.1 | server |
 | http | ^1.6.0 | app |
 | shared_preferences | ^2.5.6 | app |

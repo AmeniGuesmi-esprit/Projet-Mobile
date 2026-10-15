@@ -519,6 +519,37 @@ void main() {
   });
 
   group('cancel', () {
+    test('cancel a sold-out basket → back on sale with its units', () async {
+      final soldOut = await h.basket(merchant.id, quantite: 2);
+      final (_, body) =
+          await h.reserve(client, soldOut, quantite: 2, methodId: methodId);
+      final dto = ReservationDto.fromJson(body);
+      expect((await h.basketRow(soldOut))['quantite'], 0);
+      expect((await h.basketRow(soldOut))['statut'], 'epuise');
+
+      final (status, _) = await h.call(
+          'POST', '/foodsave/reservations/${dto.id}/cancel',
+          token: client.token);
+      expect(status, 200);
+      final basket = await h.basketRow(soldOut);
+      expect(basket['quantite'], 2);
+      expect(basket['statut'], 'disponible');
+    });
+
+    test('units released after the basket expired → not back on sale',
+        () async {
+      final (status, _) =
+          await h.reserve(client, basketId, quantite: 3, methodId: methodId);
+      expect(status, 201);
+      expect((await h.basketRow(basketId))['statut'], 'epuise');
+      // Past the basket's own expiry (window end + 1 h).
+      _Harness.now = _Harness.now.add(const Duration(hours: 4, minutes: 1));
+      expect(await h.service.expireDue(), 1);
+      final basket = await h.basketRow(basketId);
+      expect(basket['quantite'], 3);
+      expect(basket['statut'], 'epuise');
+    });
+
     test('client cancel → units restored + refund', () async {
       final (_, body) =
           await h.reserve(client, basketId, quantite: 2, methodId: methodId);

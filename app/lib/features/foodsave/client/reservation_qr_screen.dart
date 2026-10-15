@@ -8,7 +8,6 @@ import '../../../core/session/session_controller.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/widgets/money_text.dart';
-import '../../../core/widgets/status_chip.dart';
 import '../data/foodsave_api.dart';
 import '../widgets/foodsave_ui.dart';
 import 'booking/booking_format.dart';
@@ -159,7 +158,8 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(
-          content: Text(r.statutPaiement == TransactionStatus.rembourse
+          content: Text(r.statutPaiement == TransactionStatus.rembourse &&
+                  !isCashReservation(r)
               ? 'Réservation annulée : vous avez été remboursé.'
               : 'Réservation annulée.'),
         ));
@@ -209,6 +209,7 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
             reservation: r,
             token: token,
             now: _now,
+            emailSentTo: widget.session.user?.email,
           )
         : QrStatePanel(key: ValueKey(phase), phase: phase, reservation: r);
 
@@ -233,10 +234,12 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
                 Text(store.nom,
                     style: theme.textTheme.titleMedium
                         ?.copyWith(color: AppColors.moduleFoodSaveDeep)),
-              Text(reservationRef(r.id),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textSecondaryStrong,
-                      fontWeight: FontWeight.w600)),
+              // The active ticket already shows the reference.
+              if (phase != QrPhase.active || token == null)
+                Text(reservationRef(r.id),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textSecondaryStrong,
+                        fontWeight: FontWeight.w600)),
             ],
           ),
           const SizedBox(height: AppSpacing.md),
@@ -333,7 +336,11 @@ class _DetailsCard extends StatelessWidget {
                     .replaceFirst('Retrait ', ''))),
           row(Icons.shopping_basket_outlined, 'Quantité',
               Text(basketsCount(r.quantiteReservee))),
-          row(Icons.receipt_long_outlined, 'Montant',
+          row(
+              Icons.receipt_long_outlined,
+              isCashReservation(r) && r.statut == ReservationStatus.enAttente
+                  ? 'À payer en espèces au retrait'
+                  : 'Montant',
               MoneyText(r.montantCentimes,
                   style: theme.textTheme.bodyLarge
                       ?.copyWith(fontWeight: FontWeight.w700))),
@@ -343,7 +350,7 @@ class _DetailsCard extends StatelessWidget {
             runSpacing: AppSpacing.xs,
             children: [
               ReservationStatusChip(r.statut),
-              StatusChip(r.statutPaiement),
+              ReservationPaymentChip(r, cashLabel: 'Paiement au retrait'),
               if (mode != null)
                 Chip(
                   avatar: Icon(paymentTypeIcon(mode),

@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:proxilife_server/src/app.dart';
 import 'package:proxilife_server/src/db/database.dart';
 import 'package:proxilife_server/src/config/server_config.dart';
+import 'package:proxilife_server/src/email/email_sender.dart';
 import 'package:proxilife_server/src/foodsave/foodsave_context.dart';
 import 'package:proxilife_server/src/foodsave/foodsave_module.dart';
+import 'package:proxilife_server/src/foodsave/services/reverse_geocoder.dart';
 import 'package:proxilife_server/src/repositories/payment_method_repository.dart';
 import 'package:proxilife_server/src/repositories/transaction_repository.dart';
 import 'package:proxilife_server/src/repositories/user_repository.dart';
@@ -20,6 +22,7 @@ Future<void> main(List<String> args) async {
 
   final database = await AppDatabase.open(config.dbPath);
   final users = UserRepository(database.db);
+  final emailSender = createEmailSender(config);
   final ttlMinutes =
       int.tryParse(Platform.environment['FOODSAVE_QR_TTL_MINUTES'] ?? '') ?? 30;
   final foodSave = FoodSaveContext(
@@ -33,8 +36,11 @@ Future<void> main(List<String> args) async {
     ),
     uploadsDir: 'uploads',
     qrTtl: Duration(minutes: ttlMinutes),
+    mailer: switch (emailSender) { ReservationMailer m => m, _ => null },
+    geocoder: NominatimGeocoder(),
   );
-  final handler = buildApp(database, config, foodSave: foodSave);
+  final handler = buildApp(database, config,
+      emailSender: emailSender, foodSave: foodSave);
   final foodSaveJobs = startFoodSaveJobs(foodSave);
   stdout.writeln('FoodSave : QR $ttlMinutes min, expiry job every 30 s');
 

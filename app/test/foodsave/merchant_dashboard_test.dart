@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -81,6 +82,9 @@ class _FakeServer {
       return _json({..._store, ...body});
     }
     if (path == '/foodsave/merchant/stats') return _json(_stats());
+    if (path == '/foodsave/geo/reverse') {
+      return _json({'adresse': '5 Rue de Rome, Lafayette, Tunis'});
+    }
     return _json({'error': 'Introuvable'}, 404);
   });
 }
@@ -339,6 +343,35 @@ void main() {
       expect(body['latitude'], 36.8323);
       expect(popped.single, isA<StoreDto>());
       expect((popped.single! as StoreDto).nom, 'Pâtisserie Ameni');
+    });
+
+    testWidgets('moving the marker replaces the address, both are saved',
+        (tester) async {
+      final server = _FakeServer();
+      await pumpSetup(tester, server, initial: StoreDto.fromJson(_store));
+
+      await tester.tapAt(tester.getCenter(find.byType(FlutterMap)) +
+          const Offset(60, 40));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      final reverse = server.requests
+          .singleWhere((r) => r.url.path == '/foodsave/geo/reverse');
+      expect(reverse.url.queryParameters['lat'], isNot('36.8323'));
+      expect(find.widgetWithText(TextFormField, '5 Rue de Rome, Lafayette, Tunis'),
+          findsOneWidget);
+      expect(find.textContaining('Adresse mise à jour depuis la carte'),
+          findsOneWidget);
+
+      final save = find.text('Enregistrer les modifications');
+      await tester.ensureVisible(save);
+      await tester.tap(save);
+      await tester.pumpAndSettle();
+      final body = jsonDecode(
+              server.requests.singleWhere((r) => r.method == 'PUT').body)
+          as Map<String, dynamic>;
+      expect(body['adresse'], '5 Rue de Rome, Lafayette, Tunis');
+      expect(body['latitude'], isNot(36.8323));
     });
   });
 }

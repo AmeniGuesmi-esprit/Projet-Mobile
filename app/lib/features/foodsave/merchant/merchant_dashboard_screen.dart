@@ -330,12 +330,24 @@ class _StoreLine extends StatelessWidget {
             size: 20, color: AppColors.moduleFoodSaveDeep),
         const SizedBox(width: AppSpacing.xs),
         Expanded(
-          child: Text(
-            '${store.nom} · ${store.categorie.label}',
-            style: theme.titleMedium
-                ?.copyWith(color: AppColors.moduleFoodSaveDeep),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${store.nom} · ${store.categorie.label}',
+                style: theme.titleMedium
+                    ?.copyWith(color: AppColors.moduleFoodSaveDeep),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                store.adresse,
+                style: theme.bodySmall
+                    ?.copyWith(color: AppColors.textSecondaryStrong),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
         ),
         IconButton(

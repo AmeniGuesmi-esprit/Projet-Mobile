@@ -55,6 +55,20 @@ class FoodSaveApi {
         'categorie': categorie.apiValue,
       }));
 
+  /// Postal address of a GPS position (OpenStreetMap, via the server), or
+  /// null when unknown / unavailable.
+  Future<String?> addressAt(double latitude, double longitude) async {
+    try {
+      final json = await _client
+          .getJson('/foodsave/geo/reverse?lat=$latitude&lng=$longitude');
+      final adresse = json['adresse'];
+      return adresse is String && adresse.trim().isNotEmpty ? adresse : null;
+    } on ApiException catch (e) {
+      if (e.statusCode == 404 || e.statusCode == 503) return null;
+      rethrow;
+    }
+  }
+
   // ------------------------------------------------------ merchant baskets
 
   Future<List<BasketDto>> listMyBaskets({BasketStatus? statut}) async {

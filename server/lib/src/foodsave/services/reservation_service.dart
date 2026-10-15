@@ -4,6 +4,7 @@ import 'dart:developer' as developer;
 import 'package:proxilife_shared/proxilife_shared.dart';
 
 import '../../api_error.dart';
+import '../../email/reservation_qr_email.dart';
 import '../foodsave_context.dart';
 import '../foodsave_mappers.dart';
 import 'qr_token_service.dart';
@@ -646,11 +647,14 @@ class FoodSaveReservationService {
       }
       if (await txn.rawUpdate(sql.toString(), args) != 1) return;
 
+      // Units always go back to the stock; a sold-out basket is put back on
+      // sale only while it has not expired (the expiry job handles the rest).
       await txn.rawUpdate(
         'UPDATE panier SET quantite = quantite + ?, '
-        "statut = CASE WHEN statut = 'epuise' THEN 'disponible' ELSE statut END, "
+        "statut = CASE WHEN statut = 'epuise' AND date_expiration > ? "
+        "THEN 'disponible' ELSE statut END, "
         'mis_a_jour_le = ? WHERE id = ?',
-        [quantity, nowIso, panierId],
+        [quantity, nowIso, nowIso, panierId],
       );
       await ctx.journal.log('quantite_liberee',
           utilisateurId: actorId ?? rows.first['client_id'] as int,
@@ -729,7 +733,54 @@ class FoodSaveReservationService {
       reservationId: reservationId,
       cleEvenement: 'reservation_confirmee:$reservationId',
     );
+    // Never delays nor fails the reservation: SMTP errors are only logged.
+    unawaited(_emailQr(reservationId));
     return true;
+  }
+
+  /// Sends the pickup QR code by e-mail to the client (if a mailer is set).
+  Future<void> _emailQr(int reservationId) async {
+    final mailer = ctx.mailer;
+    if (mailer == null) return;
+    try {
+      final rows = await ctx.db.rawQuery(
+        'SELECT r.id, r.quantite_reservee, r.montant_centimes, r.qr_nonce, '
+        'r.mode_paiement, '
+        'r.date_expiration_qr, u.email, u.prenom, p.titre, '
+        'p.creneau_retrait_debut, p.creneau_retrait_fin, '
+        'c.nom AS c_nom, c.adresse AS c_adresse '
+        'FROM reservation r JOIN panier p ON p.id = r.panier_id '
+        'JOIN utilisateur u ON u.id = r.client_id '
+        'LEFT JOIN commerce c ON c.commercant_id = p.commercant_id '
+        'WHERE r.id = ?',
+        [reservationId],
+      );
+      if (rows.isEmpty) return;
+      final row = rows.first;
+      final nonce = row['qr_nonce'] as String?;
+      final expiry = row['date_expiration_qr'] as String?;
+      if (nonce == null || expiry == null) return;
+      await mailer.sendReservationQr(ReservationQrEmail(
+        to: row['email'] as String,
+        prenom: row['prenom'] as String,
+        reservationId: reservationId,
+        basketTitle: row['titre'] as String,
+        storeName: row['c_nom'] as String? ?? 'Commerce FoodSave',
+        storeAddress: row['c_adresse'] as String? ?? '',
+        quantity: row['quantite_reservee'] as int,
+        amountCents: row['montant_centimes'] as int,
+        pickupStart: DateTime.parse(row['creneau_retrait_debut'] as String),
+        pickupEnd: DateTime.parse(row['creneau_retrait_fin'] as String),
+        qrExpiry: DateTime.parse(expiry),
+        qrToken: await qr.sign(reservationId, nonce),
+        cashAtPickup:
+            row['mode_paiement'] == PaymentMethodType.especes.apiValue,
+      ));
+      await ctx.journal.log('qr_envoye_email', reservationId: reservationId);
+    } catch (e, st) {
+      developer.log('QR e-mail failed for reservation $reservationId',
+          error: e, stackTrace: st, name: 'foodsave');
+    }
   }
 
   /// Refunds a paid reservation through the payment module. On failure the

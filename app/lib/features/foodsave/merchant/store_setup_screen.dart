@@ -58,6 +58,13 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
       : LatLng(widget.initial!.latitude, widget.initial!.longitude);
 
   bool _mapReady = false;
+  bool _resolvingAddress = false;
+
+  /// Helper under the address field after a position change.
+  String? _addressHint;
+
+  /// Ignores stale answers when the marker moves again meanwhile.
+  int _addressRequest = 0;
   bool _locating = false;
   bool _saving = false;
   String? _positionError;
@@ -78,6 +85,35 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
     if (moveCamera && _mapReady) {
       _mapController.move(p, 16);
     }
+    _fillAddressFrom(p);
+  }
+
+  /// The address follows the marker: it is replaced by the address of the
+  /// new position (the merchant can still edit it afterwards).
+  Future<void> _fillAddressFrom(LatLng p) async {
+    final request = ++_addressRequest;
+    setState(() {
+      _resolvingAddress = true;
+      _addressHint = null;
+    });
+    String? adresse;
+    try {
+      adresse = await _api.addressAt(p.latitude, p.longitude);
+    } catch (_) {
+      adresse = null;
+    }
+    if (!mounted || request != _addressRequest) return;
+    setState(() {
+      _resolvingAddress = false;
+      if (adresse != null) {
+        _adresse.text = adresse;
+        _addressHint = 'Adresse mise à jour depuis la carte : '
+            'complétez-la si besoin (n°, rue).';
+      } else {
+        _addressHint = 'Adresse introuvable pour cette position : '
+            'saisissez-la.';
+      }
+    });
   }
 
   static String _issueMessage(LocationIssue issue) => switch (issue) {
@@ -208,10 +244,20 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
               textCapitalization: TextCapitalization.sentences,
               textInputAction: TextInputAction.done,
               maxLength: 200,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Adresse',
                 hintText: 'Ex. : 12 rue du Lac Léman, Tunis',
-                prefixIcon: Icon(Icons.place_outlined),
+                prefixIcon: const Icon(Icons.place_outlined),
+                helperText: _addressHint,
+                helperMaxLines: 2,
+                suffixIcon: _resolvingAddress
+                    ? const Padding(
+                        padding: EdgeInsets.all(AppSpacing.sm),
+                        child: SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2)),
+                      )
+                    : null,
               ),
               validator: (v) {
                 final t = v?.trim() ?? '';
@@ -254,7 +300,9 @@ class _StoreSetupScreenState extends State<StoreSetupScreen> {
             const SizedBox(height: AppSpacing.lg),
             Text('Position du commerce', style: theme.titleMedium),
             const SizedBox(height: AppSpacing.xxs),
-            Text('Touchez la carte pour placer le repère sur votre vitrine.',
+            Text(
+                'Touchez la carte pour placer le repère sur votre vitrine : '
+                'l\'adresse se met à jour automatiquement.',
                 style: theme.bodySmall),
             const SizedBox(height: AppSpacing.sm),
             _mapCard(),

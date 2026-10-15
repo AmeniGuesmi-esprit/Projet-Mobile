@@ -4,6 +4,7 @@ import 'package:proxilife_shared/proxilife_shared.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/widgets/status_chip.dart';
 import '../data/foodsave_api.dart';
 
 /// Shared FoodSave UI kit. Palette (WCAG 2.1 AA checked):
@@ -116,6 +117,41 @@ class ReservationStatusChip extends StatelessWidget {
             color: AppColors.error,
             icon: Icons.block),
       };
+}
+
+/// True for a cash reservation: the client settles it with the merchant at
+/// pickup, even though the FoodSave transaction is recorded as `paye`.
+bool isCashReservation(ReservationDto r) =>
+    r.modePaiement == PaymentMethodType.especes;
+
+/// Payment status of a reservation. Cash is paid at pickup, so a cash
+/// reservation never reads "Payé" before the pickup: it shows [cashLabel]
+/// ("Confirmée" in lists, "Paiement au retrait" on the QR screen...).
+class ReservationPaymentChip extends StatelessWidget {
+  const ReservationPaymentChip(this.reservation,
+      {super.key, this.cashLabel = 'Confirmée'});
+
+  final ReservationDto reservation;
+  final String cashLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final r = reservation;
+    final settled = r.statutPaiement == TransactionStatus.paye ||
+        r.statutPaiement == TransactionStatus.rembourse;
+    if (!isCashReservation(r) || !settled) return StatusChip(r.statutPaiement);
+    return switch (r.statut) {
+      ReservationStatus.enAttente => _TintChip(
+          label: cashLabel,
+          color: AppColors.success,
+          icon: Icons.payments_outlined),
+      ReservationStatus.retire => const StatusChip(TransactionStatus.paye),
+      ReservationStatus.expire || ReservationStatus.annule => const _TintChip(
+          label: 'Aucun paiement',
+          color: AppColors.textSecondaryStrong,
+          icon: Icons.money_off_outlined),
+    };
+  }
 }
 
 /// "-67 %" badge on the accent colour (dark text, contrast 6.3:1).
