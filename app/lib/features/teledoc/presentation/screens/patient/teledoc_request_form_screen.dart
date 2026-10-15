@@ -8,7 +8,7 @@ import '../../../../../core/session/session_controller.dart';
 import '../../../../../core/theme/app_colors.dart';
 import '../../../../../core/theme/app_spacing.dart';
 import '../../../../../core/widgets/money_text.dart';
-import '../../../../../core/widgets/primary_button.dart';
+import '../../widgets/teledoc_submit_button.dart';
 import '../../../domain/teledoc_repository.dart';
 import '../../widgets/teledoc_async_view.dart';
 import '../../widgets/teledoc_photo.dart';
@@ -320,7 +320,7 @@ class _TeledocRequestFormScreenState extends State<TeledocRequestFormScreen> {
                     ),
                   ),
                 const SizedBox(height: AppSpacing.lg),
-                PrimaryButton(
+                TeledocSubmitButton(
                   label: _isEdit
                       ? 'Enregistrer'
                       : 'Payer et envoyer la demande',

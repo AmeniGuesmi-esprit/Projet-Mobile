@@ -113,6 +113,30 @@ class TeledocPhotoStore {
     }
   }
 
+  /// Deletes stored photos that no request references any more (account
+  /// deleted by cascade, crash between save and insert). Only files with a
+  /// stored-photo name, older than [grace], are considered: a photo being
+  /// saved right now is never touched. Returns the number deleted.
+  Future<int> purgeOrphans(
+    Set<String> referenced, {
+    Duration grace = const Duration(hours: 1),
+    DateTime? now,
+  }) async {
+    final dir = Directory(directory);
+    if (!await dir.exists()) return 0;
+    final limit = (now ?? DateTime.now()).subtract(grace);
+    var deleted = 0;
+    await for (final entity in dir.list()) {
+      if (entity is! File) continue;
+      final name = p.basename(entity.path);
+      if (!_storedName.hasMatch(name) || referenced.contains(name)) continue;
+      if ((await entity.lastModified()).isAfter(limit)) continue;
+      await delete(name);
+      deleted++;
+    }
+    return deleted;
+  }
+
   ApiError _tooLarge() => ApiError.badRequest(
       'Photo trop volumineuse : ${TeledocPhotoRules.maxBytes ~/ (1024 * 1024)} '
       'Mo maximum');

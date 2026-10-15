@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:proxilife_server/src/app.dart';
 import 'package:proxilife_server/src/db/database.dart';
 import 'package:proxilife_server/src/config/server_config.dart';
+import 'package:proxilife_server/src/routes/teledoc_routes.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
 Future<void> main(List<String> args) async {
@@ -13,6 +14,7 @@ Future<void> main(List<String> args) async {
       'E-mail   : ${config.emailConsoleMode ? 'console (offline)' : 'smtp'}');
 
   final database = await AppDatabase.open(config.dbPath);
+  stdout.writeln(await purgeTeledocOrphanPhotos(database.db));
   final handler = buildApp(database, config);
 
   final server = await shelf_io.serve(

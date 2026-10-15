@@ -43,6 +43,20 @@ Router buildTeledocModule(
   ));
 }
 
+/// Startup maintenance, called once by `bin/server.dart` (never by tests:
+/// they use other databases with the same uploads directory). Returns a
+/// line for the server log.
+Future<String> purgeTeledocOrphanPhotos(
+  Database db, {
+  String uploadsDir = 'uploads/teledoc',
+}) async {
+  final rows = await db.rawQuery('SELECT photo_symptome FROM teledoc_demande '
+      'WHERE photo_symptome IS NOT NULL');
+  final referenced = {for (final r in rows) r['photo_symptome'] as String};
+  final deleted = await TeledocPhotoStore(uploadsDir).purgeOrphans(referenced);
+  return 'TeleDoc  : $deleted photo(s) orpheline(s) supprimée(s)';
+}
+
 /// TeleDoc REST routes (mounted behind [requireAuth]); see CONCEPTION.md §3.
 Router buildTeledocRoutes(TeledocService service) {
   final router = Router();

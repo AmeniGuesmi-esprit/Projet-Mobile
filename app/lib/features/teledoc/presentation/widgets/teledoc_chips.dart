@@ -24,7 +24,11 @@ class _TintChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final foreground = darkText ? AppColors.text : color;
+    // Label darkened towards the text colour: same hue, but a WCAG AA
+    // contrast (≥ 4.5:1) on the light tint at 12 px (accessibility pass).
+    final foreground = darkText
+        ? AppColors.text
+        : Color.lerp(color, AppColors.text, 0.45)!;
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm,

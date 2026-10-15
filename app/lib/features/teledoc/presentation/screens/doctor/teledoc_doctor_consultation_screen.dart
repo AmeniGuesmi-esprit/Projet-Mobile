@@ -3,7 +3,7 @@ import 'package:proxilife_shared/proxilife_shared.dart';
 
 import '../../../../../core/theme/app_colors.dart';
 import '../../../../../core/theme/app_spacing.dart';
-import '../../../../../core/widgets/primary_button.dart';
+import '../../widgets/teledoc_submit_button.dart';
 import '../../../data/url_launcher_link_opener.dart';
 import '../../../domain/teledoc_call.dart';
 import '../../../domain/teledoc_formatters.dart';
@@ -341,14 +341,14 @@ class _TeledocDoctorConsultationScreenState
               ),
             const SizedBox(height: AppSpacing.lg),
             if (inProgress)
-              PrimaryButton(
+              TeledocSubmitButton(
                 label: 'Terminer et envoyer l\'ordonnance',
                 icon: Icons.check,
                 isLoading: _busy,
                 onPressed: () => _end(c),
               )
             else if (_editingFinished) ...[
-              PrimaryButton(
+              TeledocSubmitButton(
                 label: 'Enregistrer la correction',
                 icon: Icons.save_outlined,
                 isLoading: _busy,
