@@ -52,10 +52,11 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> login(String email, String motDePasse) async {
-    final data = await _api.postJson('/auth/login', {
-      'email': email,
-      'mot_de_passe': motDePasse,
-    });
+    final data = await _api.postJson(
+      '/auth/login',
+      {'email': email, 'mot_de_passe': motDePasse},
+      ApiClient.passwordTimeout,
+    );
     final response = AuthResponseDto.fromJson(data);
     _api.token = response.token;
     await _tokenStore.write(response.token);
@@ -85,7 +86,7 @@ class SessionController extends ChangeNotifier {
       'mot_de_passe': motDePasse,
       'role': role.apiValue,
       if (rib != null && rib.isNotEmpty) 'rib': rib,
-    });
+    }, ApiClient.passwordTimeout);
   }
 
   Future<void> verify(String email, String code) =>

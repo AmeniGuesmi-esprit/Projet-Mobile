@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import '../foodsave/foodsave_schema.dart';
+
 /// Opens (and migrates) the ProxiLife SQLite database.
 class AppDatabase {
   AppDatabase._(this._db);
@@ -19,9 +21,10 @@ class AppDatabase {
     final db = await databaseFactory.openDatabase(
       absolute,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: schemaVersion,
         onConfigure: _enableForeignKeys,
         onCreate: (db, version) async => _createSchema(db),
+        onUpgrade: _upgradeSchema,
       ),
     );
     return AppDatabase._(db);
@@ -33,12 +36,21 @@ class AppDatabase {
     final db = await databaseFactory.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: schemaVersion,
         onConfigure: _enableForeignKeys,
         onCreate: (db, version) async => _createSchema(db),
+        onUpgrade: _upgradeSchema,
       ),
     );
     return AppDatabase._(db);
+  }
+
+  /// v1: users + payments. v2: FoodSave (see foodsave_schema.dart).
+  static const int schemaVersion = 2;
+
+  static Future<void> _upgradeSchema(
+      Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) await createFoodSaveSchema(db);
   }
 
   static Future<void> _enableForeignKeys(DatabaseExecutor db) async =>
@@ -123,6 +135,7 @@ CREATE TABLE transaction_ (
     await db.execute(
       'CREATE INDEX transaction_beneficiaire_idx ON transaction_(beneficiaire_id)',
     );
+    await createFoodSaveSchema(db);
   }
 
   Future<void> close() async {

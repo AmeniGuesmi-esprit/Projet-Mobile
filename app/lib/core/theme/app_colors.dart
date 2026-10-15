@@ -36,6 +36,14 @@ class AppColors {
   static const Color moduleCompte = primary;
   static const Color moduleEcoRoute = Color(0xFF2F80ED);
   static const Color moduleFoodSave = Color(0xFFE07B1F);
+
+  /// FoodSave deep orange: white text on it passes WCAG AA (5.6:1), and it
+  /// is the FoodSave colour for text/icons on white. Use for FoodSave CTAs.
+  /// Never put white text on [moduleFoodSave] itself (3.0:1) — dark [text].
+  static const Color moduleFoodSaveDeep = Color(0xFFA3520D);
+
+  /// FoodSave tinted container (hero cards, selected chips).
+  static const Color moduleFoodSaveSoft = Color(0xFFFFF3E8);
   static const Color moduleTeleDoc = Color(0xFFE0525B);
   static const Color moduleCoachProche = Color(0xFF8E5BD9);
 

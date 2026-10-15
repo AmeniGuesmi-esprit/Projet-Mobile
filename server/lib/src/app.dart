@@ -8,6 +8,8 @@ import 'auth/session_service.dart';
 import 'config/server_config.dart';
 import 'db/database.dart';
 import 'email/email_sender.dart';
+import 'foodsave/foodsave_context.dart';
+import 'foodsave/foodsave_module.dart';
 import 'repositories/payment_method_repository.dart';
 import 'repositories/transaction_repository.dart';
 import 'repositories/user_repository.dart';
@@ -26,6 +28,8 @@ Handler buildApp(
   ServerConfig config, {
   EmailSender? emailSender,
   bool logRequestsMiddleware = true,
+  FoodSaveContext? foodSave,
+  String uploadsDir = 'uploads',
 }) {
   final users = UserRepository(database.db);
   final verification = VerificationRepository(database.db);
@@ -44,6 +48,14 @@ Handler buildApp(
     transactions: TransactionRepository(database.db),
   );
 
+  final foodSaveContext = foodSave ??
+      FoodSaveContext(
+        db: database.db,
+        users: users,
+        payments: payments,
+        uploadsDir: uploadsDir,
+      );
+
   final router = Router()
     ..get('/health', (Request request) {
       return Response.ok(
@@ -59,7 +71,8 @@ Handler buildApp(
     ..post('/auth/logout',
         (Request request) => handleLogout(request, auth))
     ..mount('/', buildUserRoutes(users, auth).call)
-    ..mount('/', buildPaymentRoutes(payments).call);
+    ..mount('/', buildPaymentRoutes(payments).call)
+    ..mount('/', buildFoodSaveRouter(foodSaveContext).call);
 
   final pipeline = Pipeline()
       .addMiddleware(requireAuth(sessions))

@@ -56,3 +56,6 @@ server/.env
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# FoodSave basket photos (server runtime data)
+server/uploads/

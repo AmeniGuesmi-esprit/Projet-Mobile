@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_colors.dart';
 import 'app_spacing.dart';
@@ -49,6 +50,9 @@ class AppTheme {
         foregroundColor: AppColors.text,
         elevation: 0,
         centerTitle: false,
+        // Transparent bars over the light background: keep the status bar
+        // icons dark (Flutter would otherwise guess white ones).
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
       ),
       cardTheme: CardThemeData(
         color: AppColors.surface,
