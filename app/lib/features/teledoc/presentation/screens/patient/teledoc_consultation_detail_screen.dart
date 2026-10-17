@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:proxilife_shared/proxilife_shared.dart';
 
-import '../../../../../core/theme/app_colors.dart';
 import '../../../../../core/theme/app_spacing.dart';
 import '../../../domain/teledoc_formatters.dart';
 import '../../../domain/teledoc_repository.dart';
 import '../../widgets/teledoc_async_view.dart';
 import '../../widgets/teledoc_chips.dart';
 import 'teledoc_pharmacy_screen.dart';
+import '../../teledoc_theme.dart';
 
 /// Patient: a past consultation and its prescription.
 class TeledocConsultationDetailScreen extends StatefulWidget {
@@ -42,7 +42,7 @@ class _TeledocConsultationDetailScreenState
 
   Future<void> _choosePharmacy(TeledocConsultationDto c) async {
     final updated = await Navigator.of(context).push<TeledocConsultationDto>(
-      MaterialPageRoute(
+      TeledocPageRoute(
         builder: (_) => TeledocPharmacyScreen(
           repository: widget.repository,
           consultationId: c.id,
@@ -122,7 +122,7 @@ class _TeledocConsultationDetailScreenState
                   children: [
                     const Icon(
                       Icons.local_pharmacy_outlined,
-                      color: AppColors.primary,
+                      color: TeledocColors.brandDeep,
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     Expanded(

@@ -16,6 +16,7 @@ import '../../widgets/teledoc_async_view.dart';
 import '../../widgets/teledoc_call_panel.dart';
 import 'teledoc_consultation_detail_screen.dart';
 import 'teledoc_request_detail_screen.dart';
+import '../../teledoc_theme.dart';
 
 /// Patient: live view of the virtual waiting queue (polling every 5 s).
 class TeledocQueueScreen extends StatefulWidget {
@@ -100,7 +101,7 @@ class _TeledocQueueScreenState extends State<TeledocQueueScreen> {
   }
 
   void _openDetails() => Navigator.of(context).push<void>(
-    MaterialPageRoute(
+    TeledocPageRoute(
       builder: (_) => TeledocRequestDetailScreen(
         session: widget.session,
         repository: widget.repository,
@@ -134,7 +135,7 @@ class _TeledocQueueScreenState extends State<TeledocQueueScreen> {
                   );
           }
           return RefreshIndicator(
-            color: AppColors.primary,
+            color: TeledocColors.brandDeep,
             onRefresh: _controller.refresh,
             child: ListView(
               padding: const EdgeInsets.all(AppSpacing.md),
@@ -191,7 +192,7 @@ class _TeledocQueueScreenState extends State<TeledocQueueScreen> {
               child: ListTile(
                 leading: const Icon(
                   Icons.notifications_active_outlined,
-                  color: AppColors.primary,
+                  color: TeledocColors.brandDeep,
                 ),
                 title: const Text('Être prévenu de mon tour'),
                 subtitle: const Text(
@@ -224,7 +225,7 @@ class _TeledocQueueScreenState extends State<TeledocQueueScreen> {
             icon: status.typeConsultation == TeledocConsultationType.audio
                 ? Icons.call
                 : Icons.videocam,
-            color: AppColors.primary,
+            color: TeledocColors.brandDeep,
             title: 'Le médecin vous attend',
             message:
                 'Votre consultation '
@@ -258,7 +259,7 @@ class _TeledocQueueScreenState extends State<TeledocQueueScreen> {
           if (consultationId != null)
             FilledButton.icon(
               onPressed: () => Navigator.of(context).push<void>(
-                MaterialPageRoute(
+                TeledocPageRoute(
                   builder: (_) => TeledocConsultationDetailScreen(
                     repository: widget.repository,
                     consultationId: consultationId,

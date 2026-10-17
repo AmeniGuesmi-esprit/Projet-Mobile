@@ -6,6 +6,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/service_badge.dart';
 import '../screens/teledoc_home_screen.dart';
+import '../teledoc_theme.dart';
 
 /// "TeleDoc Express" entry point on the home screen (single line in
 /// `features/home/home_screen.dart`). Only shown to patients and doctors.
@@ -29,7 +30,7 @@ class TeledocEntryCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
+            TeledocPageRoute<void>(
               builder: (_) => TeledocHomeScreen(session: session),
             ),
           ),

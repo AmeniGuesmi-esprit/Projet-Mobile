@@ -13,6 +13,7 @@ import '../../widgets/teledoc_photo.dart';
 import 'teledoc_consultation_detail_screen.dart';
 import 'teledoc_queue_screen.dart';
 import 'teledoc_request_form_screen.dart';
+import '../../teledoc_theme.dart';
 
 /// Patient: one request, with the actions its status allows
 /// (TeledocRequestRules is the single source of truth).
@@ -50,7 +51,7 @@ class _TeledocRequestDetailScreenState
 
   Future<void> _edit(TeledocRequestDto request) async {
     final saved = await Navigator.of(context).push<TeledocRequestDto>(
-      MaterialPageRoute(
+      TeledocPageRoute(
         builder: (_) => TeledocRequestFormScreen(
           session: widget.session,
           repository: widget.repository,
@@ -109,7 +110,7 @@ class _TeledocRequestDetailScreenState
         future: _future,
         onRetry: _reload,
         builder: (context, request) => RefreshIndicator(
-          color: AppColors.primary,
+          color: TeledocColors.brandDeep,
           onRefresh: () async {
             _reload();
             await _future;
@@ -231,7 +232,7 @@ class _TeledocRequestDetailScreenState
           request.statut == TeledocRequestStatus.enCours) ...[
         FilledButton.icon(
           onPressed: () => Navigator.of(context).push<void>(
-            MaterialPageRoute(
+            TeledocPageRoute(
               builder: (_) => TeledocQueueScreen(
                 session: widget.session,
                 repository: widget.repository,
@@ -281,7 +282,7 @@ class _TeledocRequestDetailScreenState
           consultationId != null)
         FilledButton.icon(
           onPressed: () => Navigator.of(context).push<void>(
-            MaterialPageRoute(
+            TeledocPageRoute(
               builder: (_) => TeledocConsultationDetailScreen(
                 repository: widget.repository,
                 consultationId: consultationId,

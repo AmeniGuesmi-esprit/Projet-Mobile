@@ -12,6 +12,7 @@ import '../../widgets/teledoc_submit_button.dart';
 import '../../../domain/teledoc_repository.dart';
 import '../../widgets/teledoc_async_view.dart';
 import '../../widgets/teledoc_photo.dart';
+import '../../teledoc_theme.dart';
 
 /// Picks a photo from the camera or the gallery; `null` if cancelled.
 typedef TeledocImagePicker = Future<Uint8List?> Function(ImageSource source);
@@ -89,7 +90,7 @@ class _TeledocRequestFormScreenState extends State<TeledocRequestFormScreen> {
             ListTile(
               leading: const Icon(
                 Icons.photo_camera_outlined,
-                color: AppColors.primary,
+                color: TeledocColors.brandDeep,
               ),
               title: const Text('Prendre une photo'),
               onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
@@ -97,7 +98,7 @@ class _TeledocRequestFormScreenState extends State<TeledocRequestFormScreen> {
             ListTile(
               leading: const Icon(
                 Icons.photo_library_outlined,
-                color: AppColors.primary,
+                color: TeledocColors.brandDeep,
               ),
               title: const Text('Choisir dans la galerie'),
               onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
@@ -238,6 +239,9 @@ class _TeledocRequestFormScreenState extends State<TeledocRequestFormScreen> {
                 Text('Urgence', style: theme.textTheme.titleMedium),
                 const SizedBox(height: AppSpacing.xs),
                 SegmentedButton<TeledocUrgency>(
+                  // No check mark: « Moyenne » fits on one line on a phone;
+                  // the selection stays visible (fill) and announced.
+                  showSelectedIcon: false,
                   segments: [
                     for (final u in TeledocUrgency.values)
                       ButtonSegment(value: u, label: Text(u.label)),
@@ -306,7 +310,7 @@ class _TeledocRequestFormScreenState extends State<TeledocRequestFormScreen> {
                     child: ListTile(
                       leading: const Icon(
                         Icons.account_balance_wallet_outlined,
-                        color: AppColors.primary,
+                        color: TeledocColors.brandDeep,
                       ),
                       title: const Text('Tarif de la téléconsultation'),
                       subtitle: const Text(

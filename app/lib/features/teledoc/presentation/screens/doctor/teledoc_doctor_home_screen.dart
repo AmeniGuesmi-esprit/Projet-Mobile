@@ -11,6 +11,7 @@ import '../../widgets/teledoc_async_view.dart';
 import '../../widgets/teledoc_chips.dart';
 import '../../widgets/teledoc_photo.dart';
 import 'teledoc_doctor_consultation_screen.dart';
+import '../../teledoc_theme.dart';
 
 /// What the doctor's queue tab needs: the queue and their own consultations
 /// (to detect the one in progress).
@@ -63,7 +64,7 @@ class _TeledocDoctorHomeScreenState extends State<TeledocDoctorHomeScreen> {
 
   Future<void> _openConsultation(int id) async {
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
+      TeledocPageRoute(
         builder: (_) => TeledocDoctorConsultationScreen(
           repository: widget.repository,
           consultationId: id,
@@ -86,13 +87,16 @@ class _TeledocDoctorHomeScreenState extends State<TeledocDoctorHomeScreen> {
               child: Text('Type de consultation'),
             ),
             ListTile(
-              leading: const Icon(Icons.videocam, color: AppColors.primary),
+              leading: const Icon(
+                Icons.videocam,
+                color: TeledocColors.brandDeep,
+              ),
               title: const Text('Vidéo'),
               onTap: () =>
                   Navigator.pop(sheetContext, TeledocConsultationType.video),
             ),
             ListTile(
-              leading: const Icon(Icons.call, color: AppColors.primary),
+              leading: const Icon(Icons.call, color: TeledocColors.brandDeep),
               title: const Text('Audio'),
               onTap: () =>
                   Navigator.pop(sheetContext, TeledocConsultationType.audio),
@@ -201,7 +205,7 @@ class _TeledocDoctorHomeScreenState extends State<TeledocDoctorHomeScreen> {
     final theme = Theme.of(context);
     final current = data.current;
     return RefreshIndicator(
-      color: AppColors.primary,
+      color: TeledocColors.brandDeep,
       onRefresh: () async {
         _reload();
         await _future;
@@ -215,7 +219,7 @@ class _TeledocDoctorHomeScreenState extends State<TeledocDoctorHomeScreen> {
                 contentPadding: const EdgeInsets.all(AppSpacing.md),
                 leading: const Icon(
                   Icons.medical_services,
-                  color: AppColors.primary,
+                  color: TeledocColors.brandDeep,
                 ),
                 title: const Text('Consultation en cours'),
                 subtitle: Text('${current.patientNom} · ${current.motif}'),

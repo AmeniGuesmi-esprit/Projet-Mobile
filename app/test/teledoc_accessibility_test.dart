@@ -7,6 +7,7 @@ import 'package:proxilife/features/teledoc/presentation/screens/patient/teledoc_
 import 'package:proxilife/features/teledoc/presentation/screens/patient/teledoc_queue_screen.dart';
 import 'package:proxilife/features/teledoc/presentation/screens/patient/teledoc_request_form_screen.dart';
 import 'package:proxilife/features/teledoc/presentation/screens/teledoc_home_screen.dart';
+import 'package:proxilife/features/teledoc/presentation/teledoc_theme.dart';
 import 'package:proxilife_shared/proxilife_shared.dart';
 
 import 'teledoc_fakes.dart';
@@ -87,10 +88,13 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
-        home: MediaQuery.withClampedTextScaling(
-          minScaleFactor: scale,
-          maxScaleFactor: scale,
-          child: screen,
+        // Pages are pushed with TeledocPageRoute in the app: same theme.
+        home: TeledocThemed(
+          child: MediaQuery.withClampedTextScaling(
+            minScaleFactor: scale,
+            maxScaleFactor: scale,
+            child: screen,
+          ),
         ),
       ),
     );

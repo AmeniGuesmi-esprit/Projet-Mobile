@@ -15,6 +15,7 @@ import 'teledoc_queue_screen.dart';
 import 'teledoc_request_detail_screen.dart';
 import 'teledoc_request_form_screen.dart';
 import 'teledoc_pharmacy_screen.dart';
+import '../../teledoc_theme.dart';
 
 /// Patient space: requests (with the active one highlighted) and the
 /// consultation history (prescriptions).
@@ -52,7 +53,7 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
 
   Future<void> _openForm() async {
     final created = await Navigator.of(context).push<TeledocRequestDto>(
-      MaterialPageRoute(
+      TeledocPageRoute(
         builder: (_) => TeledocRequestFormScreen(
           session: widget.session,
           repository: widget.repository,
@@ -69,7 +70,7 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
 
   Future<void> _openQueue(TeledocRequestDto request) async {
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
+      TeledocPageRoute(
         builder: (_) => TeledocQueueScreen(
           session: widget.session,
           repository: widget.repository,
@@ -82,7 +83,7 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
 
   Future<void> _openRequest(TeledocRequestDto request) async {
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
+      TeledocPageRoute(
         builder: (_) => TeledocRequestDetailScreen(
           session: widget.session,
           repository: widget.repository,
@@ -105,7 +106,7 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
               tooltip: 'Pharmacies de garde',
               icon: const Icon(Icons.local_pharmacy_outlined),
               onPressed: () => Navigator.of(context).push<void>(
-                MaterialPageRoute(
+                TeledocPageRoute(
                   builder: (_) =>
                       TeledocPharmacyScreen(repository: widget.repository),
                 ),
@@ -134,7 +135,7 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
             .firstOrNull;
         final past = requests.where((r) => r != active).toList();
         return RefreshIndicator(
-          color: AppColors.primary,
+          color: TeledocColors.brandDeep,
           onRefresh: () async {
             _reload();
             await _requests;
@@ -192,7 +193,7 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
           );
         }
         return RefreshIndicator(
-          color: AppColors.primary,
+          color: TeledocColors.brandDeep,
           onRefresh: () async {
             _reload();
             await _consultations;
@@ -209,7 +210,7 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
                     c.type == TeledocConsultationType.audio
                         ? Icons.call_outlined
                         : Icons.videocam_outlined,
-                    color: AppColors.primary,
+                    color: TeledocColors.brandDeep,
                   ),
                   title: Text(c.motif),
                   subtitle: Text(
@@ -217,7 +218,7 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
                   ),
                   trailing: TeledocStatusChip(c.statutDemande),
                   onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(
+                    TeledocPageRoute(
                       builder: (_) => TeledocConsultationDetailScreen(
                         repository: widget.repository,
                         consultationId: c.id,

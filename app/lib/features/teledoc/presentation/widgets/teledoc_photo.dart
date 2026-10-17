@@ -4,6 +4,7 @@ import 'package:proxilife_shared/proxilife_shared.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../domain/teledoc_repository.dart';
+import '../teledoc_theme.dart';
 
 /// Symptom photo of a request, loaded through the authenticated endpoint.
 /// Tapping it opens a zoomable full-screen view.
@@ -44,7 +45,7 @@ class TeledocRequestPhoto extends StatelessWidget {
           color: AppColors.outlineSoft,
           child: InkWell(
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
+              TeledocPageRoute<void>(
                 builder: (_) => Scaffold(
                   backgroundColor: Colors.black,
                   appBar: AppBar(foregroundColor: Colors.white),

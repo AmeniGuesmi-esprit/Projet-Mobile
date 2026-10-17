@@ -8,6 +8,7 @@ import '../../data/teledoc_api_repository.dart';
 import '../../domain/teledoc_repository.dart';
 import 'doctor/teledoc_doctor_home_screen.dart';
 import 'patient/teledoc_patient_home_screen.dart';
+import '../teledoc_theme.dart';
 
 /// Entry of the TeleDoc module: routes to the patient or the doctor space
 /// according to the connected user's role.
@@ -22,23 +23,25 @@ class TeledocHomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final repo = repository ?? TeledocApiRepository(session.api);
-    return switch (session.user?.role) {
-      UserRole.client => TeledocPatientHomeScreen(
-        session: session,
-        repository: repo,
-      ),
-      UserRole.medecin => TeledocDoctorHomeScreen(repository: repo),
-      _ => Scaffold(
-        appBar: AppBar(title: const Text('TeleDoc Express')),
-        body: const EmptyState(
-          icon: Icons.medical_services_outlined,
-          title: 'Réservé aux patients et aux médecins',
-          message:
-              'Connectez-vous avec un compte client ou médecin pour '
-              'utiliser la téléconsultation.',
-          color: AppColors.moduleTeleDoc,
+    return TeledocThemed(
+      child: switch (session.user?.role) {
+        UserRole.client => TeledocPatientHomeScreen(
+          session: session,
+          repository: repo,
         ),
-      ),
-    };
+        UserRole.medecin => TeledocDoctorHomeScreen(repository: repo),
+        _ => Scaffold(
+          appBar: AppBar(title: const Text('TeleDoc Express')),
+          body: const EmptyState(
+            icon: Icons.medical_services_outlined,
+            title: 'Réservé aux patients et aux médecins',
+            message:
+                'Connectez-vous avec un compte client ou médecin pour '
+                'utiliser la téléconsultation.',
+            color: AppColors.moduleTeleDoc,
+          ),
+        ),
+      },
+    );
   }
 }

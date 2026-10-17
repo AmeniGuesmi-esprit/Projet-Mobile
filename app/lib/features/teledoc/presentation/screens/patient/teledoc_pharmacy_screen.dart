@@ -12,6 +12,7 @@ import '../../../domain/teledoc_formatters.dart';
 import '../../../domain/teledoc_location.dart';
 import '../../../domain/teledoc_repository.dart';
 import '../../widgets/teledoc_async_view.dart';
+import '../../teledoc_theme.dart';
 
 /// Position used for the search + the on-duty pharmacies around it.
 class _PharmacySearch {
@@ -327,7 +328,7 @@ class _MapPin extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = highlighted ? AppColors.primary : AppColors.moduleTeleDoc;
+    final color = highlighted ? AppColors.text : TeledocColors.brand;
     return Semantics(
       button: true,
       label: '$number. $name',
@@ -388,7 +389,7 @@ class _PharmacyCard extends StatelessWidget {
       shape: highlighted
           ? RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadius.md),
-              side: const BorderSide(color: AppColors.primary, width: 2),
+              side: const BorderSide(color: TeledocColors.brandDeep, width: 2),
             )
           : null,
       child: InkWell(

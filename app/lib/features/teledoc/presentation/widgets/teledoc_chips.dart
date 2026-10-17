@@ -3,6 +3,7 @@ import 'package:proxilife_shared/proxilife_shared.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../teledoc_theme.dart';
 
 /// Tint pill (same recipe as the core `StatusChip`: 10 % background,
 /// 35 % border, coloured label). Colour is never the only signal: every
@@ -74,7 +75,7 @@ class TeledocStatusChip extends StatelessWidget {
     ),
     TeledocRequestStatus.enCours => _TintChip(
       label: status.label,
-      color: AppColors.primary,
+      color: TeledocColors.brand,
       icon: Icons.videocam_outlined,
     ),
     TeledocRequestStatus.terminee => _TintChip(
