@@ -246,6 +246,56 @@ void main() {
       expect(server.requests, isEmpty);
     });
 
+    testWidgets('only durations that fit between start and expiry',
+        (tester) async {
+      tallView(tester);
+      // 22:00 → 23:00 style: a one-hour sale.
+      final json = basketJson(id: 3, titre: 'Panier du soir');
+      final start = DateTime.parse(json['creneau_retrait_debut'] as String);
+      json['creneau_retrait_fin'] =
+          _iso(start.add(const Duration(hours: 1)));
+      json['date_expiration'] = _iso(start.add(const Duration(hours: 1)));
+      final server = _Server((_) async => _json({}, 500));
+      await tester.pumpWidget(_app(BasketFormScreen(
+          session: makeTestSession(api: server.api),
+          basket: BasketDto.fromJson(json))));
+      await tester.pumpAndSettle();
+
+      for (final m in [15, 30, 45, 60]) {
+        expect(find.byKey(ValueKey('duration-$m')), findsOneWidget,
+            reason: '$m min');
+      }
+      expect(find.byKey(const ValueKey('duration-90')), findsNothing);
+      expect(find.byKey(const ValueKey('duration-120')), findsNothing);
+    });
+
+    testWidgets('start date + expiry + reservation duration, no "Fin"',
+        (tester) async {
+      tallView(tester);
+      final server = _Server((request) async => _json({
+            'panier': basketJson(id: 6, titre: 'Panier du soir'),
+            'clients_notifies': 0,
+          }, 201));
+      await tester.pumpWidget(
+          _app(BasketFormScreen(session: makeTestSession(api: server.api))));
+
+      expect(find.text('Date de début'), findsOneWidget);
+      expect(find.text('Créneau de retrait'), findsNothing);
+      expect(find.text('Fin'), findsNothing);
+      expect(find.text('Durée de réservation'), findsOneWidget);
+
+      await fill(tester, price: '5', initial: '15');
+      final chip = find.byKey(const ValueKey('duration-45'));
+      await tester.ensureVisible(chip);
+      await tester.tap(chip);
+      await tester.pumpAndSettle();
+      await submit(tester);
+
+      final body =
+          jsonDecode(server.requests.single.body) as Map<String, dynamic>;
+      expect(body['duree_reservation_minutes'], 45);
+    });
+
     testWidgets('live discount preview and successful publication',
         (tester) async {
       tallView(tester);
@@ -290,6 +340,15 @@ void main() {
       expect(body['prix_initial_centimes'], 3000);
       expect(body['quantite'], 3);
       expect((body['creneau_retrait_fin'] as String).endsWith('Z'), isTrue);
+      // New form: start = now, pickup until the expiry (2 h later by
+      // default), default reservation duration.
+      final start = DateTime.parse(body['creneau_retrait_debut'] as String);
+      expect(DateTime.now().difference(start).inMinutes.abs(), lessThan(2));
+      expect(body['creneau_retrait_fin'], body['date_expiration']);
+      expect(
+          DateTime.parse(body['date_expiration'] as String).difference(start),
+          const Duration(hours: 2));
+      expect(body['duree_reservation_minutes'], 30);
       expect(popped?.id, 5);
       expect(find.text('Panier publié · 3 clients à proximité notifiés'),
           findsOneWidget);

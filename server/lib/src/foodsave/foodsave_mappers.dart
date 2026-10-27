@@ -36,6 +36,8 @@ BasketDto basketFromRow(
       statut: BasketStatus.parse(row['statut'] as String),
       commercantId: row['commercant_id'] as int,
       creeLe: DateTime.parse(row['cree_le'] as String),
+      dureeReservationMinutes: row['duree_reservation_minutes'] as int? ??
+          foodSaveDefaultReservationMinutes,
       commerce: store,
       distanceKm: distanceKm,
       reservationsActives: reservationsActives,

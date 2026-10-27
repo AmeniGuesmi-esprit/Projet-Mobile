@@ -215,12 +215,26 @@ void main() {
           isFalse);
     });
 
-    testWidgets('sort segment reloads with tri', (tester) async {
+    testWidgets('filters: Tout (default), -50 % et +', (tester) async {
       final h = Harness(items: [basketJson(id: 1, titre: 'Viennoiseries')]);
       await _pumpDiscovery(tester, h);
-      await tester.tap(find.text('Réduction'));
+      expect(find.text('Tout'), findsOneWidget);
+      expect(find.text('Prix'), findsNothing);
+      final first = h.basketListCalls.last.queryParameters;
+      expect(first['tri'], 'distance');
+      expect(first.containsKey('rayon_km'), isFalse);
+      expect(first.containsKey('reduction_min'), isFalse);
+
+      await tester.tap(find.text('-50 % et +'));
       await tester.pumpAndSettle();
-      expect(h.basketListCalls.last.queryParameters['tri'], 'reduction');
+      final q = h.basketListCalls.last.queryParameters;
+      expect(q['reduction_min'], '50');
+      expect(q['tri'], 'reduction');
+
+      await tester.tap(find.text('Tout'));
+      await tester.pumpAndSettle();
+      expect(h.basketListCalls.last.queryParameters.containsKey('reduction_min'),
+          isFalse);
     });
 
     testWidgets('search is debounced (350 ms)', (tester) async {
@@ -239,6 +253,34 @@ void main() {
       await tester.pumpAndSettle();
       expect(h.basketListCalls.length, before + 1);
       expect(h.basketListCalls.last.queryParameters['q'], 'pain');
+    });
+
+    testWidgets('≤ 3 km sends the radius; without position: no request',
+        (tester) async {
+      final h = Harness(items: [basketJson(id: 1, titre: 'Viennoiseries')]);
+      await _pumpDiscovery(tester, h);
+      await tester.tap(find.text('≤ 3 km'));
+      await tester.pumpAndSettle();
+      final q = h.basketListCalls.last.queryParameters;
+      expect(q['rayon_km'], '3.0');
+      expect(q['tri'], 'distance');
+      expect(q['lat'], isNotNull);
+
+      geo
+        ..permission = GeoPermission.denied
+        ..position = null;
+      FoodSaveLocationService.instance.reset();
+      await tester.tap(find.text('Tout'));
+      await tester.pumpAndSettle();
+      final before = h.basketListCalls.length;
+      await tester.tap(find.text('≤ 3 km'));
+      await tester.pumpAndSettle();
+      expect(h.basketListCalls.length, before);
+      expect(find.text('Aucun panier à 3 km ou moins'), findsOneWidget);
+      expect(
+          find.text(
+              'Activez la localisation pour voir les paniers proches de vous.'),
+          findsOneWidget);
     });
 
     testWidgets('location denied shows the banner and can retry',
@@ -331,7 +373,37 @@ void main() {
           _iso(now.add(const Duration(minutes: 2)));
       await _pumpDetail(tester, Harness(detail: json));
 
-      expect(find.textContaining('Le créneau de retrait est terminé'),
+      expect(find.textContaining('Réservations closes depuis'),
+          findsOneWidget);
+      expect(_buttonWithText(tester, 'Réservation indisponible').onPressed,
+          isNull);
+    });
+
+    Map<String, dynamic> closingBasket(Duration left) {
+      final now = DateTime.now().toUtc();
+      final json = basketJson(id: 1, titre: 'Panier du soir');
+      json['creneau_retrait_debut'] =
+          _iso(now.subtract(const Duration(hours: 1)));
+      json['creneau_retrait_fin'] = _iso(now.add(left));
+      json['date_expiration'] = _iso(now.add(left));
+      json['duree_reservation_minutes'] = 15;
+      return json;
+    }
+
+    testWidgets('15-min reservations, expires in 20 min: still reservable',
+        (tester) async {
+      await _pumpDetail(tester,
+          Harness(detail: closingBasket(const Duration(minutes: 20))));
+      expect(_buttonWithText(tester, 'Réserver').onPressed, isNotNull);
+      expect(find.textContaining('Réservable jusqu\'à'), findsOneWidget);
+      expect(find.textContaining('retrait sous 15 min'), findsOneWidget);
+    });
+
+    testWidgets('15-min reservations, expires in 10 min: button disabled',
+        (tester) async {
+      await _pumpDetail(tester,
+          Harness(detail: closingBasket(const Duration(minutes: 10))));
+      expect(find.textContaining('durée de réservation est de 15 min'),
           findsOneWidget);
       expect(_buttonWithText(tester, 'Réservation indisponible').onPressed,
           isNull);

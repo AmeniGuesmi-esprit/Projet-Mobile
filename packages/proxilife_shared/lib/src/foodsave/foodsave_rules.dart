@@ -8,6 +8,14 @@ const double foodSaveNotificationRadiusKm = 5;
 /// Minimum time left in the pickup window to accept a new reservation.
 const Duration foodSaveMinPickupLead = Duration(minutes: 5);
 
+/// A basket stays on sale at least this long after its start.
+const Duration foodSaveMinOpenDuration = Duration(hours: 1);
+
+/// Reservation (QR) lifetime chosen by the merchant, in minutes.
+const int foodSaveDefaultReservationMinutes = 30;
+const int foodSaveMinReservationMinutes = 5;
+const int foodSaveMaxReservationMinutes = 240;
+
 /// Canonical FoodSave state machines + validation. The server is
 /// authoritative; the app only uses these for UI hints. Never re-implement.
 class FoodSaveRules {
@@ -56,6 +64,22 @@ class FoodSaveRules {
   /// The merchant may still edit price/content/quantity.
   static bool isBasketEditable(BasketStatus s) => !isBasketTerminal(s);
 
+  /// Time a reservation needs before the end of the pickup window: the
+  /// basket's reservation duration, and never less than
+  /// [foodSaveMinPickupLead].
+  static Duration reservationLead(int reservationMinutes) {
+    final d = Duration(minutes: reservationMinutes);
+    return d > foodSaveMinPickupLead ? d : foodSaveMinPickupLead;
+  }
+
+  /// Last moment a basket can be reserved: e.g. pickup until 23:00 with a
+  /// 15-minute reservation duration → reservations close at 22:45.
+  static DateTime reservationDeadline({
+    required DateTime pickupEnd,
+    required int reservationMinutes,
+  }) =>
+      pickupEnd.subtract(reservationLead(reservationMinutes));
+
   /// Whether a client can reserve [quantity] units right now.
   static bool canReserve({
     required BasketStatus status,
@@ -64,23 +88,26 @@ class FoodSaveRules {
     required DateTime pickupEnd,
     required DateTime basketExpiry,
     required DateTime now,
+    int reservationMinutes = 0,
   }) =>
       status == BasketStatus.disponible &&
       quantity >= 1 &&
       quantity <= available &&
       now.isBefore(basketExpiry) &&
-      now.add(foodSaveMinPickupLead).isBefore(pickupEnd);
+      now.isBefore(reservationDeadline(
+          pickupEnd: pickupEnd, reservationMinutes: reservationMinutes));
 
-  /// QR expiry: until the end of the pickup window when reserving before the
-  /// window opens; otherwise [ttl] after generation, capped at the window end.
+  /// QR expiry: [ttl] (the basket's reservation duration) after the
+  /// reservation — counted from the window opening when reserving before
+  /// it — and never after the end of the pickup window.
   static DateTime qrExpiry({
     required DateTime now,
     required DateTime pickupStart,
     required DateTime pickupEnd,
     required Duration ttl,
   }) {
-    if (now.isBefore(pickupStart)) return pickupEnd;
-    final byTtl = now.add(ttl);
+    final from = now.isBefore(pickupStart) ? pickupStart : now;
+    final byTtl = from.add(ttl);
     return byTtl.isBefore(pickupEnd) ? byTtl : pickupEnd;
   }
 
@@ -102,6 +129,7 @@ class FoodSaveRules {
     required DateTime pickupStart,
     required DateTime pickupEnd,
     required DateTime expiry,
+    int reservationMinutes = foodSaveDefaultReservationMinutes,
   }) {
     final t = title.trim();
     if (t.length < 3 || t.length > 80) {
@@ -123,6 +151,20 @@ class FoodSaveRules {
     }
     if (expiry.isBefore(pickupEnd)) {
       return 'La date d\'expiration doit être après la fin du créneau de retrait';
+    }
+    if (expiry.isBefore(pickupStart.add(foodSaveMinOpenDuration))) {
+      return 'La date d\'expiration doit être au moins 1 h après le début';
+    }
+    if (reservationMinutes < foodSaveMinReservationMinutes ||
+        reservationMinutes > foodSaveMaxReservationMinutes) {
+      return 'La durée de réservation doit être comprise entre '
+          '$foodSaveMinReservationMinutes et '
+          '$foodSaveMaxReservationMinutes minutes';
+    }
+    final openMinutes = pickupEnd.difference(pickupStart).inMinutes;
+    if (reservationMinutes > openMinutes) {
+      return 'La durée de réservation ne peut pas dépasser la durée de mise '
+          'en vente ($openMinutes min entre le début et l\'expiration)';
     }
     return null;
   }

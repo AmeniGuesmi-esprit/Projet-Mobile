@@ -9,6 +9,7 @@ import '../email/email_sender.dart';
 import '../repositories/user_repository.dart';
 import '../services/payment_service.dart';
 import 'services/reverse_geocoder.dart';
+import 'services/route_planner.dart';
 
 /// Dependencies shared by every FoodSave service. Built once in `buildApp`.
 class FoodSaveContext {
@@ -20,6 +21,7 @@ class FoodSaveContext {
     this.qrTtl = const Duration(minutes: 30),
     this.mailer,
     this.geocoder,
+    this.routePlanner,
     DateTime Function()? clock,
   }) : _clock = clock ?? DateTime.now {
     journal = FoodSaveJournal(db, now);
@@ -43,6 +45,9 @@ class FoodSaveContext {
 
   /// GPS → address for the store form (null: feature unavailable).
   final ReverseGeocoder? geocoder;
+
+  /// Client → store routes, by car or on foot (null: unavailable).
+  final RoutePlanner? routePlanner;
 
   final DateTime Function() _clock;
 

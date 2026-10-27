@@ -14,8 +14,43 @@ import '../platform/location_service.dart';
 import '../widgets/foodsave_ui.dart';
 import 'basket_detail_screen.dart';
 import 'basket_map_view.dart';
+import 'route_screen.dart';
 import 'my_reservations_screen.dart';
 import 'widgets/client_basket_card.dart';
+
+/// Quick filters of the client list (first one = every offer).
+enum DiscoveryFilter {
+  tout,
+  proche,
+  grosseReduction;
+
+  /// "≤ 3 km" filter radius.
+  static const double nearbyKm = 3;
+
+  /// "-50 % et +" filter threshold.
+  static const int bigDiscountPercent = 50;
+
+  String get label => switch (this) {
+        DiscoveryFilter.tout => 'Tout',
+        DiscoveryFilter.proche => '≤ ${nearbyKm.round()} km',
+        DiscoveryFilter.grosseReduction => '-$bigDiscountPercent % et +',
+      };
+
+  /// Small heading shown above [label] in the filter button.
+  String? get title => switch (this) {
+        DiscoveryFilter.tout => null,
+        DiscoveryFilter.proche => 'Distance',
+        DiscoveryFilter.grosseReduction => 'Réduction',
+      };
+
+  String get tooltip => switch (this) {
+        DiscoveryFilter.tout => 'Toutes les offres',
+        DiscoveryFilter.proche =>
+          'Offres à ${nearbyKm.round()} km ou moins',
+        DiscoveryFilter.grosseReduction =>
+          'Réduction de $bigDiscountPercent % ou plus',
+      };
+}
 
 /// Client home of FoodSave: nearby anti-waste baskets with search,
 /// category / sort filters and a list ⇄ map toggle.
@@ -38,7 +73,7 @@ class _ClientDiscoveryScreenState extends State<ClientDiscoveryScreen>
   final TextEditingController _search = TextEditingController();
 
   FoodCategory? _category;
-  BasketSort _sort = BasketSort.distance;
+  DiscoveryFilter _filter = DiscoveryFilter.tout;
   String _query = '';
   bool _showMap = false;
   Timer? _debounce;
@@ -81,12 +116,25 @@ class _ClientDiscoveryScreenState extends State<ClientDiscoveryScreen>
   Future<List<BasketDto>> _load() {
     final pos = _position;
     _loadedWith = pos;
+    // "≤ 3 km" needs a position: without one nothing can be close.
+    if (_filter == DiscoveryFilter.proche && pos == null) {
+      return Future.value(const <BasketDto>[]);
+    }
     return _api.listBaskets(
       latitude: pos?.latitude,
       longitude: pos?.longitude,
+      rayonKm: _filter == DiscoveryFilter.proche
+          ? DiscoveryFilter.nearbyKm
+          : null,
+      reductionMin: _filter == DiscoveryFilter.grosseReduction
+          ? DiscoveryFilter.bigDiscountPercent
+          : null,
       categorie: _category,
       recherche: _query,
-      tri: _sort,
+      // Biggest discounts first for the discount filter, else nearest.
+      tri: _filter == DiscoveryFilter.grosseReduction
+          ? BasketSort.reduction
+          : BasketSort.distance,
     );
   }
 
@@ -156,9 +204,9 @@ class _ClientDiscoveryScreenState extends State<ClientDiscoveryScreen>
     _reload();
   }
 
-  void _selectSort(BasketSort s) {
-    if (s == _sort) return;
-    _sort = s;
+  void _selectFilter(DiscoveryFilter f) {
+    if (f == _filter) return;
+    _filter = f;
     _reload();
   }
 
@@ -238,10 +286,10 @@ class _ClientDiscoveryScreenState extends State<ClientDiscoveryScreen>
                 onClear: _clearSearch,
               ),
               _CategoryChips(selected: _category, onSelected: _selectCategory),
-              _SortRow(
-                sort: _sort,
+              _FilterRow(
+                filter: _filter,
                 showMap: _showMap,
-                onSort: _selectSort,
+                onFilter: _selectFilter,
                 onToggleView: () => setState(() => _showMap = !_showMap),
               ),
               Expanded(
@@ -291,6 +339,16 @@ class _ClientDiscoveryScreenState extends State<ClientDiscoveryScreen>
         userLatitude: pos?.latitude,
         userLongitude: pos?.longitude,
         onOpenBasket: _openBasket,
+        onDirections: (store) => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => RouteScreen(
+              api: _api,
+              store: store,
+              fromLatitude: pos?.latitude,
+              fromLongitude: pos?.longitude,
+            ),
+          ),
+        ),
       );
     } else if (items.isEmpty) {
       child = _ScrollableFill(
@@ -299,10 +357,21 @@ class _ClientDiscoveryScreenState extends State<ClientDiscoveryScreen>
         child: EmptyState(
           icon: Icons.shopping_basket_outlined,
           color: AppColors.moduleFoodSave,
-          title: 'Aucun panier près de chez vous pour le moment',
-          message: _query.isNotEmpty || _category != null
-              ? 'Essayez une autre recherche ou une autre catégorie.'
-              : 'Revenez plus tard : les commerçants publient leurs invendus en fin de journée.',
+          title: switch (_filter) {
+            DiscoveryFilter.tout =>
+              'Aucun panier près de chez vous pour le moment',
+            DiscoveryFilter.proche =>
+              'Aucun panier à ${DiscoveryFilter.nearbyKm.round()} km ou moins',
+            DiscoveryFilter.grosseReduction =>
+              'Aucun panier à -${DiscoveryFilter.bigDiscountPercent} % ou plus',
+          },
+          message: _filter == DiscoveryFilter.proche && _position == null
+              ? 'Activez la localisation pour voir les paniers proches de vous.'
+              : _query.isNotEmpty || _category != null
+                  ? 'Essayez une autre recherche ou une autre catégorie.'
+                  : _filter != DiscoveryFilter.tout
+                      ? 'Touchez « Tout » pour voir toutes les offres.'
+                      : 'Revenez plus tard : les commerçants publient leurs invendus en fin de journée.',
         ),
       );
     } else {
@@ -543,24 +612,18 @@ class _CategoryChips extends StatelessWidget {
       );
 }
 
-class _SortRow extends StatelessWidget {
-  const _SortRow({
-    required this.sort,
+class _FilterRow extends StatelessWidget {
+  const _FilterRow({
+    required this.filter,
     required this.showMap,
-    required this.onSort,
+    required this.onFilter,
     required this.onToggleView,
   });
 
-  final BasketSort sort;
+  final DiscoveryFilter filter;
   final bool showMap;
-  final ValueChanged<BasketSort> onSort;
+  final ValueChanged<DiscoveryFilter> onFilter;
   final VoidCallback onToggleView;
-
-  static String label(BasketSort s) => switch (s) {
-        BasketSort.distance => 'Distance',
-        BasketSort.prix => 'Prix',
-        BasketSort.reduction => 'Réduction',
-      };
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -569,20 +632,41 @@ class _SortRow extends StatelessWidget {
         child: Row(
           children: [
             Expanded(
-              child: SegmentedButton<BasketSort>(
+              child: SegmentedButton<DiscoveryFilter>(
                 segments: [
-                  for (final s in BasketSort.values)
+                  for (final f in DiscoveryFilter.values)
                     ButtonSegment(
-                      value: s,
-                      label: Text(label(s),
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                      tooltip: 'Trier par ${label(s).toLowerCase()}',
+                      value: f,
+                      // Name over value ("Distance" / "≤ 3 km"); shrinks
+                      // rather than truncating on narrow phones.
+                      label: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (f.title != null)
+                              Text(f.title!,
+                                  maxLines: 1,
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500)),
+                            Text(f.label,
+                                maxLines: 1,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
+                      tooltip: f.tooltip,
                     ),
                 ],
-                selected: {sort},
+                selected: {filter},
                 showSelectedIcon: false,
-                onSelectionChanged: (set) => onSort(set.first),
+                onSelectionChanged: (set) => onFilter(set.first),
                 style: SegmentedButton.styleFrom(
+                  minimumSize: const Size(0, 52),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
                   selectedBackgroundColor: AppColors.moduleFoodSaveSoft,
                   selectedForegroundColor: AppColors.moduleFoodSaveDeep,
                   foregroundColor: AppColors.text,

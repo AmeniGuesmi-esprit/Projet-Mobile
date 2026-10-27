@@ -25,6 +25,7 @@ dependencies:
   latlong2: ^0.10.1
   proxilife_shared:
     path: ../packages/proxilife_shared
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:

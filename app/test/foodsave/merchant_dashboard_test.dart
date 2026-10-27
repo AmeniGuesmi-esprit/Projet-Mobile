@@ -228,9 +228,20 @@ void main() {
         findsOneWidget);
     expect(find.descendant(of: donut, matching: find.text('4')),
         findsOneWidget);
+    // Centre = total of the ring (10 + 2 + 4 + 1); the pickup rate (10 of
+    // the 14 non-cancelled, finished reservations) is under the legend.
+    expect(find.descendant(of: donut, matching: find.text('17')),
+        findsOneWidget);
+    expect(find.descendant(of: donut, matching: find.text('réservations')),
+        findsOneWidget);
+    expect(
+        tester.widget<Text>(find.byKey(const ValueKey('pickup-rate'))).data,
+        ChartFormat.percent(71));
     expect(
         find.descendant(
-            of: donut, matching: find.text(ChartFormat.percent(71))),
+            of: donut,
+            matching: find.textContaining(
+                '10 retirés sur 14 réservations arrivées à échéance')),
         findsOneWidget);
     expect(
       find.bySemanticsLabel(RegExp(

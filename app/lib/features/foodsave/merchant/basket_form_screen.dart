@@ -38,13 +38,15 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
   late FoodCategory _category;
   late DateTime _pickupDay; // local date (time ignored)
   late TimeOfDay _startTime;
-  late TimeOfDay _endTime;
-  late DateTime _expiry; // local
-  bool _expiryTouched = false;
 
-  /// Days between the pickup start and end (edited baskets whose window
-  /// crosses midnight); new baskets use a same-day window.
-  int _endDayOffset = 0;
+  /// End of sale; pickup is possible from the start until this moment.
+  late DateTime _expiry; // local
+
+  /// Minutes a reservation (its QR code) stays valid.
+  late int _reservationMinutes;
+
+  /// Quick choices for the reservation duration (minutes).
+  static const List<int> _durationChoices = [15, 30, 45, 60, 90, 120];
 
   PickedPhoto? _photo;
   bool _submitting = false;
@@ -69,32 +71,17 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
 
     if (b != null) {
       final start = b.creneauRetraitDebut.toLocal();
-      final end = b.creneauRetraitFin.toLocal();
       _pickupDay = DateTime(start.year, start.month, start.day);
       _startTime = TimeOfDay.fromDateTime(start);
-      _endTime = TimeOfDay.fromDateTime(end);
       _expiry = b.dateExpiration.toLocal();
-      _expiryTouched = true;
-      _endDayOffset = DateTime(end.year, end.month, end.day)
-          .difference(_pickupDay)
-          .inDays
-          .clamp(0, 30);
+      _reservationMinutes = b.dureeReservationMinutes;
     } else {
-      // Next half hour, 2-hour window; tomorrow 18:00 if it would cross midnight.
+      // Starts now (today, current time); on sale for 2 hours by default.
       final now = DateTime.now();
-      var start = DateTime(now.year, now.month, now.day, now.hour,
-          now.minute < 30 ? 30 : 0);
-      if (now.minute >= 30) start = start.add(const Duration(hours: 1));
-      var end = start.add(const Duration(hours: 2));
-      if (end.day != start.day) {
-        final tomorrow = DateTime(now.year, now.month, now.day + 1);
-        start = DateTime(tomorrow.year, tomorrow.month, tomorrow.day, 18);
-        end = start.add(const Duration(hours: 2));
-      }
-      _pickupDay = DateTime(start.year, start.month, start.day);
-      _startTime = TimeOfDay.fromDateTime(start);
-      _endTime = TimeOfDay.fromDateTime(end);
-      _expiry = end;
+      _pickupDay = DateTime(now.year, now.month, now.day);
+      _startTime = TimeOfDay.fromDateTime(now);
+      _expiry = _pickupStart.add(const Duration(hours: 2));
+      _reservationMinutes = foodSaveDefaultReservationMinutes;
     }
   }
 
@@ -111,13 +98,34 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
   DateTime _at(DateTime day, TimeOfDay t) =>
       DateTime(day.year, day.month, day.day, t.hour, t.minute);
   DateTime get _pickupStart => _at(_pickupDay, _startTime);
-  DateTime get _pickupEnd => _at(
-      DateTime(_pickupDay.year, _pickupDay.month,
-          _pickupDay.day + _endDayOffset),
-      _endTime);
 
+  /// Earliest allowed expiry: 1 h after the start (server rule).
+  DateTime get _minExpiry => _pickupStart.add(foodSaveMinOpenDuration);
+
+  /// Keeps the expiry at least 1 h after a start that moved later.
   void _syncExpiry() {
-    if (!_expiryTouched) _expiry = _pickupEnd;
+    if (_expiry.isBefore(_minExpiry)) _expiry = _minExpiry;
+    _fitDuration();
+  }
+
+  /// Minutes between the start and the expiry: the longest possible
+  /// reservation duration.
+  int get _openMinutes => _expiry.difference(_pickupStart).inMinutes;
+
+  /// Duration choices that fit between the start and the expiry
+  /// (e.g. 22:00 → 23:00: 15, 30, 45 min and 1 h).
+  List<int> get _allowedDurations =>
+      {..._durationChoices, _reservationMinutes}
+          .where((m) => m <= _openMinutes)
+          .toList()
+        ..sort();
+
+  /// Shortens the selected duration when the sale got shorter.
+  void _fitDuration() {
+    if (_reservationMinutes <= _openMinutes) return;
+    final fitting = _durationChoices.where((m) => m <= _openMinutes);
+    _reservationMinutes =
+        fitting.isEmpty ? foodSaveMinReservationMinutes : fitting.last;
   }
 
   // ------------------------------------------------------------ pickers
@@ -159,7 +167,7 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
       );
 
   Future<void> _choosePickupDay() async {
-    final d = await _pickDate(_pickupDay, 'Jour du retrait');
+    final d = await _pickDate(_pickupDay, 'Jour de début');
     if (d == null) return;
     setState(() {
       _pickupDay = d;
@@ -169,20 +177,10 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
   }
 
   Future<void> _chooseStart() async {
-    final t = await _pickTime(_startTime, 'Début du retrait');
+    final t = await _pickTime(_startTime, 'Heure de début');
     if (t == null) return;
     setState(() {
       _startTime = t;
-      _syncExpiry();
-      _formError = null;
-    });
-  }
-
-  Future<void> _chooseEnd() async {
-    final t = await _pickTime(_endTime, 'Fin du retrait');
-    if (t == null) return;
-    setState(() {
-      _endTime = t;
       _syncExpiry();
       _formError = null;
     });
@@ -193,8 +191,8 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
     if (d == null) return;
     setState(() {
       _expiry = DateTime(d.year, d.month, d.day, _expiry.hour, _expiry.minute);
-      _expiryTouched = true;
-      _formError = null;
+      _fitDuration();
+      _formError = _expiryHint();
     });
   }
 
@@ -204,10 +202,22 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
     if (t == null) return;
     setState(() {
       _expiry = _at(_expiry, t);
-      _expiryTouched = true;
-      _formError = null;
+      _fitDuration();
+      _formError = _expiryHint();
     });
   }
+
+  /// Immediate feedback when the chosen expiry is too early.
+  String? _expiryHint() => _expiry.isBefore(_minExpiry)
+      ? 'L\'expiration doit être au moins 1 h après le début '
+          '(${relativeDayFr(_minExpiry)} à ${formatTimeFr(_minExpiry)} '
+          'au plus tôt).'
+      : null;
+
+  void _selectDuration(int minutes) => setState(() {
+        _reservationMinutes = minutes;
+        _formError = null;
+      });
 
   void _stepQuantity(int delta) {
     final current = int.tryParse(_quantity.text.trim()) ?? 0;
@@ -232,7 +242,8 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
     final initial = parseDinarsToCents(_initialPrice.text)!;
     final quantity = int.parse(_quantity.text.trim());
     final start = _pickupStart;
-    final end = _pickupEnd;
+    // Pickup is possible from the start until the expiry.
+    final end = _expiry;
     final ruleError = FoodSaveRules.basketError(
       title: _title.text,
       content: _content.text,
@@ -242,10 +253,11 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
       pickupStart: start,
       pickupEnd: end,
       expiry: _expiry,
+      reservationMinutes: _reservationMinutes,
     );
     final timeError = ruleError ??
         (_creating && !end.isAfter(DateTime.now())
-            ? 'La fin du créneau de retrait doit être dans le futur'
+            ? 'La date d\'expiration doit être dans le futur'
             : null);
     if (timeError != null) {
       setState(() => _formError = timeError);
@@ -269,6 +281,7 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
           creneauRetraitDebut: start,
           creneauRetraitFin: end,
           dateExpiration: _expiry,
+          dureeReservationMinutes: _reservationMinutes,
         );
         saved = created.panier;
         final n = created.clientsNotifies;
@@ -293,6 +306,10 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
           creneauRetraitFin: changed(end, b.creneauRetraitFin) ? end : null,
           dateExpiration:
               changed(_expiry, b.dateExpiration) ? _expiry : null,
+          dureeReservationMinutes:
+              _reservationMinutes != b.dureeReservationMinutes
+                  ? _reservationMinutes
+                  : null,
         );
         confirmation = 'Panier mis à jour';
       }
@@ -466,34 +483,31 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
                 ),
               ),
             const SizedBox(height: AppSpacing.lg),
-            _SectionTitle('Créneau de retrait'),
-            const SizedBox(height: AppSpacing.xs),
-            _PickerTile(
-              icon: Icons.event_outlined,
-              label: 'Jour',
-              value: relativeDayFr(_pickupDay),
-              onTap: enabled ? _choosePickupDay : null,
+            _SectionTitle('Date de début'),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              'Le panier est proposé et peut être retiré dès ce moment.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: AppColors.textSecondaryStrong),
             ),
             const SizedBox(height: AppSpacing.xs),
             Row(
               children: [
                 Expanded(
                   child: _PickerTile(
-                    icon: Icons.schedule,
-                    label: 'Début',
-                    value: formatTimeFr(_pickupStart),
-                    onTap: enabled ? _chooseStart : null,
+                    icon: Icons.event_outlined,
+                    label: 'Jour',
+                    value: relativeDayFr(_pickupDay),
+                    onTap: enabled ? _choosePickupDay : null,
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: _PickerTile(
-                    icon: Icons.schedule_outlined,
-                    label: 'Fin',
-                    value: _endDayOffset == 0
-                        ? formatTimeFr(_pickupEnd)
-                        : '${formatTimeFr(_pickupEnd)} (+$_endDayOffset j)',
-                    onTap: enabled ? _chooseEnd : null,
+                    icon: Icons.schedule,
+                    label: 'Heure',
+                    value: formatTimeFr(_pickupStart),
+                    onTap: enabled ? _chooseStart : null,
                   ),
                 ),
               ],
@@ -502,7 +516,9 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
             _SectionTitle('Date d\'expiration'),
             const SizedBox(height: AppSpacing.xxs),
             Text(
-              'Après cette date, le panier n\'est plus proposé aux clients.',
+              'Après cette date, le panier n\'est plus proposé ni retirable. '
+              'Au moins 1 h après le début (dès '
+              '${formatTimeFr(_minExpiry)}).',
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: AppColors.textSecondaryStrong),
             ),
@@ -526,6 +542,58 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
                     onTap: enabled ? _chooseExpiryTime : null,
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            _SectionTitle('Durée de réservation'),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              'Temps dont le client dispose pour retirer son panier après '
+              'l\'avoir réservé : passé ce délai, la réservation expire et '
+              'son QR code n\'est plus valide. Au plus '
+              '${_durationLabel(_openMinutes.clamp(0, foodSaveMaxReservationMinutes))} '
+              '(temps entre le début et l\'expiration) : les réservations '
+              'ferment ${_durationLabel(_reservationMinutes)} avant '
+              'l\'expiration, à ${formatTimeFr(FoodSaveRules.reservationDeadline(pickupEnd: _expiry, reservationMinutes: _reservationMinutes))}.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: AppColors.textSecondaryStrong),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            if (_allowedDurations.isEmpty)
+              Text(
+                'Choisissez d\'abord une expiration au moins 1 h après le début.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: AppColors.error),
+              ),
+            Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              children: [
+                for (final m in _allowedDurations)
+                  ChoiceChip(
+                    key: ValueKey('duration-$m'),
+                    label: Text(_durationLabel(m)),
+                    selected: m == _reservationMinutes,
+                    showCheckmark: false,
+                    avatar: m == _reservationMinutes
+                        ? const Icon(Icons.timer_outlined,
+                            size: 18, color: AppColors.moduleFoodSaveDeep)
+                        : null,
+                    selectedColor: AppColors.moduleFoodSaveSoft,
+                    labelStyle: TextStyle(
+                      color: m == _reservationMinutes
+                          ? AppColors.moduleFoodSaveDeep
+                          : AppColors.text,
+                      fontWeight: m == _reservationMinutes
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                    ),
+                    side: BorderSide(
+                        color: m == _reservationMinutes
+                            ? AppColors.moduleFoodSaveDeep
+                            : AppColors.outline),
+                    onSelected: enabled ? (_) => _selectDuration(m) : null,
+                  ),
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -830,4 +898,11 @@ class _PickerTile extends StatelessWidget {
           ),
         ),
       );
+}
+
+/// "15 min", "1 h", "1 h 30".
+String _durationLabel(int minutes) {
+  if (minutes < 60) return '$minutes min';
+  final m = minutes % 60;
+  return m == 0 ? '${minutes ~/ 60} h' : '${minutes ~/ 60} h $m';
 }

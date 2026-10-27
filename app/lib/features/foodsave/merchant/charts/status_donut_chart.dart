@@ -154,13 +154,17 @@ class _StatusDonutChartState extends State<StatusDonutChart>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // The ring shows shares of ALL reservations, so its
+                  // centre shows their total (the pickup rate, which
+                  // excludes cancellations, is explained under the legend).
                   Text(
-                    total == 0 ? '–' : ChartFormat.percent(widget.tauxRetrait),
+                    total == 0 ? '–' : '$total',
                     style: theme.headlineMedium?.copyWith(
                         color: AppColors.moduleFoodSaveDeep,
                         fontWeight: FontWeight.w800),
                   ),
-                  Text('taux de retrait', style: theme.bodySmall),
+                  Text(total > 1 ? 'réservations' : 'réservation',
+                      style: theme.bodySmall),
                 ],
               ),
             ),
@@ -169,12 +173,43 @@ class _StatusDonutChartState extends State<StatusDonutChart>
       ),
     );
 
+    final picked = widget.parStatut[ReservationStatus.retire.apiValue] ?? 0;
+    final expired = widget.parStatut[ReservationStatus.expire.apiValue] ?? 0;
+
     final legend = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final s in segments)
           _LegendRow(segment: s, total: total),
+        if (picked + expired > 0) ...[
+          const Divider(height: AppSpacing.lg),
+          Row(
+            children: [
+              const Icon(Icons.task_alt,
+                  size: 18, color: AppColors.moduleFoodSaveDeep),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text('Taux de retrait',
+                    style: theme.bodyMedium?.copyWith(
+                        color: AppColors.text, fontWeight: FontWeight.w600)),
+              ),
+              Text(ChartFormat.percent(widget.tauxRetrait),
+                  key: const ValueKey('pickup-rate'),
+                  style: theme.titleMedium?.copyWith(
+                      color: AppColors.moduleFoodSaveDeep,
+                      fontWeight: FontWeight.w800)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            '$picked retiré${picked > 1 ? 's' : ''} sur ${picked + expired} '
+            'réservation${picked + expired > 1 ? 's' : ''} arrivée'
+            '${picked + expired > 1 ? 's' : ''} à échéance '
+            '(annulations et réservations en cours non comptées).',
+            style: theme.bodySmall,
+          ),
+        ],
         if (total == 0)
           Padding(
             padding: const EdgeInsets.only(top: AppSpacing.xs),

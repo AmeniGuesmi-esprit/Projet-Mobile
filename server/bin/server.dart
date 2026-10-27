@@ -7,6 +7,7 @@ import 'package:proxilife_server/src/email/email_sender.dart';
 import 'package:proxilife_server/src/foodsave/foodsave_context.dart';
 import 'package:proxilife_server/src/foodsave/foodsave_module.dart';
 import 'package:proxilife_server/src/foodsave/services/reverse_geocoder.dart';
+import 'package:proxilife_server/src/foodsave/services/route_planner.dart';
 import 'package:proxilife_server/src/repositories/payment_method_repository.dart';
 import 'package:proxilife_server/src/repositories/transaction_repository.dart';
 import 'package:proxilife_server/src/repositories/user_repository.dart';
@@ -38,6 +39,7 @@ Future<void> main(List<String> args) async {
     qrTtl: Duration(minutes: ttlMinutes),
     mailer: switch (emailSender) { ReservationMailer m => m, _ => null },
     geocoder: NominatimGeocoder(),
+    routePlanner: OsrmRoutePlanner(),
   );
   final handler = buildApp(database, config,
       emailSender: emailSender, foodSave: foodSave);

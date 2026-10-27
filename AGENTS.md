@@ -118,6 +118,7 @@ SERVER_PORT=8080
 | image_picker | ^1.2.4 | app |
 | flutter_local_notifications | ^22.3.1 | app |
 | intl | ^0.20.3 | app |
+| url_launcher | ^6.3.3 | app (FoodSave: open directions in Google Maps) |
 
 (If a newer version is on pub.dev but younger than 7 days at install time, pin
 the previous one.)

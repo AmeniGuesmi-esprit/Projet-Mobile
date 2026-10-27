@@ -21,11 +21,13 @@ import 'payment_method_option.dart';
 /// Maximum units per reservation (mirrors the server rule).
 const int maxUnitsPerReservation = 20;
 
-/// Legal / expectation note shown before paying.
-const String qrExpiryNote =
-    'Le QR code expire à la fin du créneau (ou 30 min après sa génération '
-    'pendant le créneau). Passé ce délai, le panier est remis en vente sans '
-    'remboursement automatique.';
+/// Legal / expectation note shown before paying, with the basket's
+/// reservation duration chosen by the merchant.
+String qrExpiryNote(int minutes) =>
+    'Votre réservation est valable $minutes min (à partir de l\'ouverture '
+    'du retrait si vous réservez avant), sans dépasser la date '
+    'd\'expiration du panier. Passé ce délai, le QR code n\'est plus '
+    'valide et le panier est remis en vente sans remboursement automatique.';
 
 enum ReserveStep { quantity, payment, summary, success }
 
@@ -637,7 +639,7 @@ class _ReserveSheetState extends State<ReserveSheet> {
         _InlineMessage(
           icon: Icons.schedule,
           color: AppColors.warning,
-          message: qrExpiryNote,
+          message: qrExpiryNote(widget.basket.dureeReservationMinutes),
         ),
         AnimatedSize(
           duration: FoodSaveMotion.fast,

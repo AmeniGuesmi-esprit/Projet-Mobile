@@ -242,8 +242,10 @@ void main() {
       expect(dto.qrToken!.split('.')[1], '${dto.id}');
       expect(dto.panier?.commerce?.nom, 'Boulangerie commerce@test.fr');
       expect(dto.factureNumero, isNotNull);
-      // Reserved before the window opens → valid until the window end.
-      expect(dto.dateExpirationQr, _Harness.now.add(const Duration(hours: 3)));
+      // Reserved before the window opens → the basket's reservation
+      // duration (default 30 min) counts from the opening (now + 1 h).
+      expect(dto.dateExpirationQr,
+          _Harness.now.add(const Duration(hours: 1, minutes: 30)));
 
       final basket = await h.basketRow(basketId);
       expect(basket['quantite'], 1);
@@ -293,6 +295,44 @@ void main() {
       expect(cStatus, 403);
     });
 
+    test('QR lifetime = the basket\'s reservation duration', () async {
+      // Window already open: the QR expires 15 min after the reservation.
+      final open = await h.basket(merchant.id,
+          start: const Duration(minutes: -10));
+      await h.database.db.update(
+          'panier', {'duree_reservation_minutes': 15},
+          where: 'id = ?', whereArgs: [open]);
+      final (status, body) =
+          await h.reserve(client, open, quantite: 1, methodId: methodId);
+      expect(status, 201, reason: '$body');
+      expect(ReservationDto.fromJson(body).dateExpirationQr,
+          _Harness.now.add(const Duration(minutes: 15)));
+    });
+
+    test('closes "reservation duration" before the end of pickup',
+        () async {
+      // Pickup ends in 20 min; reservation duration 15 min → open until
+      // end - 15 min, i.e. 5 more minutes.
+      final late = await h.basket(merchant.id,
+          start: const Duration(hours: -1),
+          end: const Duration(minutes: 20));
+      await h.database.db.update(
+          'panier', {'duree_reservation_minutes': 15},
+          where: 'id = ?', whereArgs: [late]);
+      _Harness.now = _Harness.now.add(const Duration(minutes: 5));
+      var (status, body) =
+          await h.reserve(client, late, quantite: 1, methodId: methodId);
+      expect(status, 409, reason: '$body');
+      expect(body['error'], contains('Réservations closes'));
+      expect((await h.basketRow(late))['quantite'], 3);
+
+      // One minute earlier it was still possible.
+      _Harness.now = _Harness.now.subtract(const Duration(minutes: 1));
+      (status, body) =
+          await h.reserve(client, late, quantite: 1, methodId: methodId);
+      expect(status, 201, reason: '$body');
+    });
+
     test('quantity above stock → 409 and nothing changes', () async {
       final (status, body) =
           await h.reserve(client, basketId, quantite: 4, methodId: methodId);
@@ -332,7 +372,7 @@ void main() {
           end: const Duration(minutes: 4));
       final (status, body) = await h.reserve(client, closing, methodId: methodId);
       expect(status, 409);
-      expect(body['error'], contains('créneau'));
+      expect(body['error'], contains('Réservations closes'));
     });
 
     test('insufficient wallet → 402, annule, units restored exactly once',
@@ -420,7 +460,8 @@ void main() {
       expect(row['retire_le'], _Harness.now.toIso8601String());
       expect(row['qr_nonce'], isNull);
       expect(
-          await h.count('foodsave_notification', 'type = ?', ['retrait_effectue']),
+          await h.count('foodsave_notification',
+              'type = ? AND utilisateur_id = ?', ['retrait_effectue', client.id]),
           1);
 
       final again = ScanResultDto.fromJson(
@@ -486,8 +527,9 @@ void main() {
       expect(row['statut_paiement'], 'paye'); // no automatic refund
       expect((await h.basketRow(basketId))['quantite'], 3);
       expect(
-          await h.count(
-              'foodsave_notification', 'type = ?', ['reservation_expiree']),
+          await h.count('foodsave_notification',
+              'type = ? AND utilisateur_id = ?',
+              ['reservation_expiree', client.id]),
           1);
     });
 
@@ -515,6 +557,68 @@ void main() {
       final basket = await h.basketRow(basketId);
       expect(basket['quantite'], 3);
       expect(basket['statut'], 'disponible');
+    });
+  });
+
+  group('merchant notifications', () {
+    Future<List<Map<String, Object?>>> merchantNotifs() =>
+        h.database.db.query('foodsave_notification',
+            where: 'utilisateur_id = ?',
+            whereArgs: [merchant.id],
+            orderBy: 'id');
+
+    test('new reservation, cancellation, pickup and expiry', () async {
+      // Reserve → "Nouvelle réservation" (cash: to collect at pickup).
+      var (status, body) =
+          await h.reserve(client, basketId, quantite: 2, methodId: methodId);
+      expect(status, 201);
+      final first = ReservationDto.fromJson(body);
+      var notifs = await merchantNotifs();
+      expect(notifs.single['type'], 'nouvelle_reservation');
+      expect(notifs.single['reservation_id'], first.id);
+      expect(notifs.single['message'], contains('Ameni G.'));
+      expect(notifs.single['message'], contains('2 × « Panier du soir »'));
+      expect(notifs.single['message'], contains('espèces au retrait'));
+
+      // Client cancels → "Réservation annulée".
+      (status, _) = await h.call(
+          'POST', '/foodsave/reservations/${first.id}/cancel',
+          token: client.token);
+      expect(status, 200);
+      notifs = await merchantNotifs();
+      expect(notifs.last['type'], 'reservation_annulee');
+      expect(notifs.last['message'], contains('remis en vente'));
+
+      // Pickup → "Retrait effectué".
+      (status, body) =
+          await h.reserve(client, basketId, quantite: 1, methodId: methodId);
+      final second = ReservationDto.fromJson(body);
+      (status, _) = await h.scan(merchant, second.qrToken!);
+      expect(status, 200);
+      notifs = await merchantNotifs();
+      expect(notifs.last['type'], 'retrait_effectue');
+      expect(notifs.last['reservation_id'], second.id);
+
+      // Not picked up in time → "Réservation expirée" (once).
+      (status, body) =
+          await h.reserve(client, basketId, quantite: 1, methodId: methodId);
+      final third = ReservationDto.fromJson(body);
+      _Harness.now = third.dateExpirationQr!.add(const Duration(minutes: 1));
+      expect(await h.service.expireDue(), 1);
+      expect(await h.service.expireDue(), 0);
+      notifs = await merchantNotifs();
+      expect(notifs.last['type'], 'reservation_expiree');
+      expect(notifs.last['reservation_id'], third.id);
+      expect(
+          notifs.map((n) => n['type']).toList(),
+          [
+            'nouvelle_reservation',
+            'reservation_annulee',
+            'nouvelle_reservation',
+            'retrait_effectue',
+            'nouvelle_reservation',
+            'reservation_expiree',
+          ]);
     });
   });
 

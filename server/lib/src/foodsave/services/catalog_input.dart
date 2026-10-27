@@ -20,6 +20,7 @@ const Map<String, String> _labels = {
   'creneau_retrait_debut': 'début du créneau de retrait',
   'creneau_retrait_fin': 'fin du créneau de retrait',
   'date_expiration': 'date d\'expiration',
+  'duree_reservation_minutes': 'durée de réservation',
 };
 
 String _label(String key) => _labels[key] ?? key;

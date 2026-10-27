@@ -80,8 +80,15 @@ class FoodSaveBasketService {
     final prixInitial = reqInt(body, 'prix_initial_centimes');
     final quantite = reqInt(body, 'quantite');
     final debut = reqDate(body, 'creneau_retrait_debut');
-    final fin = reqDate(body, 'creneau_retrait_fin');
     final expiration = reqDate(body, 'date_expiration');
+    // Without an explicit end, pickup is possible until the expiry.
+    final fin = optDate(body, 'creneau_retrait_fin') ?? expiration;
+    // Default: 30 min, shortened to fit a shorter pickup window.
+    final duree = optInt(body, 'duree_reservation_minutes') ??
+        math.max(
+            foodSaveMinReservationMinutes,
+            math.min(foodSaveDefaultReservationMinutes,
+                fin.difference(debut).inMinutes));
 
     _validate(
       titre: titre,
@@ -92,6 +99,7 @@ class FoodSaveBasketService {
       debut: debut,
       fin: fin,
       expiration: expiration,
+      duree: duree,
     );
     if (quantite < 1) {
       throw ApiError.badRequest('La quantité doit être d\'au moins 1');
@@ -112,6 +120,7 @@ class FoodSaveBasketService {
         'creneau_retrait_debut': isoUtc(debut),
         'creneau_retrait_fin': isoUtc(fin),
         'date_expiration': isoUtc(expiration),
+        'duree_reservation_minutes': duree,
         'statut': BasketStatus.disponible.apiValue,
         'commercant_id': merchantId,
         'cree_le': now,
@@ -153,13 +162,23 @@ class FoodSaveBasketService {
       final prixInitial = optInt(body, 'prix_initial_centimes') ??
           row['prix_initial_centimes'] as int;
       final quantite = optInt(body, 'quantite') ?? oldQty;
-      final newFin = optDate(body, 'creneau_retrait_fin');
       final debut = optDate(body, 'creneau_retrait_debut') ??
           DateTime.parse(row['creneau_retrait_debut'] as String);
-      final fin =
-          newFin ?? DateTime.parse(row['creneau_retrait_fin'] as String);
-      final expiration = optDate(body, 'date_expiration') ??
-          DateTime.parse(row['date_expiration'] as String);
+      final oldFin = DateTime.parse(row['creneau_retrait_fin'] as String);
+      final oldExpiration = DateTime.parse(row['date_expiration'] as String);
+      final newExpiration = optDate(body, 'date_expiration');
+      final expiration = newExpiration ?? oldExpiration;
+      // A window that ended at the expiry keeps following it.
+      var newFin = optDate(body, 'creneau_retrait_fin');
+      if (newFin == null &&
+          newExpiration != null &&
+          oldFin.isAtSameMomentAs(oldExpiration)) {
+        newFin = newExpiration;
+      }
+      final fin = newFin ?? oldFin;
+      final duree = optInt(body, 'duree_reservation_minutes') ??
+          row['duree_reservation_minutes'] as int? ??
+          foodSaveDefaultReservationMinutes;
 
       _validate(
         titre: titre,
@@ -170,6 +189,7 @@ class FoodSaveBasketService {
         debut: debut,
         fin: fin,
         expiration: expiration,
+        duree: duree,
       );
       if (newFin != null) _requireFutureEnd(newFin);
 
@@ -192,8 +212,8 @@ class FoodSaveBasketService {
         'UPDATE panier SET titre = ?, contenu = ?, categorie = ?, '
         'prix_centimes = ?, prix_initial_centimes = ?, quantite = ?, '
         'quantite_initiale = ?, creneau_retrait_debut = ?, '
-        'creneau_retrait_fin = ?, date_expiration = ?, statut = ?, '
-        'mis_a_jour_le = ? '
+        'creneau_retrait_fin = ?, date_expiration = ?, '
+        'duree_reservation_minutes = ?, statut = ?, mis_a_jour_le = ? '
         'WHERE id = ? AND commercant_id = ? AND quantite = ? AND statut = ?',
         [
           titre,
@@ -206,6 +226,7 @@ class FoodSaveBasketService {
           isoUtc(debut),
           isoUtc(fin),
           isoUtc(expiration),
+          duree,
           newStatus.apiValue,
           ctx.nowIso(),
           basketId,
@@ -383,6 +404,7 @@ class FoodSaveBasketService {
     required DateTime debut,
     required DateTime fin,
     required DateTime expiration,
+    required int duree,
   }) {
     final error = FoodSaveRules.basketError(
       title: titre,
@@ -393,6 +415,7 @@ class FoodSaveBasketService {
       pickupStart: debut,
       pickupEnd: fin,
       expiry: expiration,
+      reservationMinutes: duree,
     );
     if (error != null) throw ApiError.badRequest(error);
   }

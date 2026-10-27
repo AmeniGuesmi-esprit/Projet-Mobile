@@ -224,6 +224,10 @@ class _TypeStyle {
             Icons.check_circle_outline_rounded, AppColors.success),
         FoodSaveNotificationType.reservationConfirmee =>
           const _TypeStyle(Icons.qr_code_2_rounded, AppColors.info),
+        FoodSaveNotificationType.nouvelleReservation => const _TypeStyle(
+            Icons.shopping_bag_outlined, AppColors.moduleFoodSave),
+        FoodSaveNotificationType.reservationAnnulee =>
+          const _TypeStyle(Icons.event_busy_outlined, AppColors.error),
       };
 }
 

@@ -303,7 +303,8 @@ void main() {
 
       await _continue(tester);
       expect(find.text('Récapitulatif'), findsOneWidget);
-      expect(find.textContaining('Le QR code expire à la fin du créneau'),
+      // Basket JSON has no duration → default 30 min.
+      expect(find.textContaining('Votre réservation est valable 30 min'),
           findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('reserve-confirm')));

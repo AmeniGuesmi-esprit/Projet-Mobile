@@ -104,9 +104,23 @@ String? unavailableReason(BasketDto basket, {DateTime? now, int? viewerId}) {
     pickupEnd: basket.creneauRetraitFin,
     basketExpiry: basket.dateExpiration,
     now: n,
+    reservationMinutes: basket.dureeReservationMinutes,
   );
   if (!ok) {
-    return 'Le créneau de retrait est terminé : ce panier ne peut plus être réservé.';
+    if (!n.isBefore(basket.creneauRetraitFin)) {
+      return 'Le retrait est terminé : ce panier ne peut plus être réservé.';
+    }
+    return 'Réservations closes depuis ${clockFr(reservationDeadlineOf(basket))} : '
+        'ce panier expire à ${clockFr(basket.creneauRetraitFin)} et la durée '
+        'de réservation est de ${basket.dureeReservationMinutes} min.';
   }
   return null;
 }
+
+/// Last moment [basket] can be reserved (end of pickup - reservation
+/// duration).
+DateTime reservationDeadlineOf(BasketDto basket) =>
+    FoodSaveRules.reservationDeadline(
+      pickupEnd: basket.creneauRetraitFin,
+      reservationMinutes: basket.dureeReservationMinutes,
+    );

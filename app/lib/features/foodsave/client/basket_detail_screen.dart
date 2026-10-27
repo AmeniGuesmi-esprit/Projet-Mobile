@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:proxilife_shared/proxilife_shared.dart';
 
@@ -8,6 +10,7 @@ import '../../../core/widgets/money_text.dart';
 import '../data/foodsave_api.dart';
 import '../widgets/foodsave_ui.dart';
 import 'basket_map_view.dart';
+import 'route_screen.dart';
 import 'reservation_qr_screen.dart';
 import 'reserve_flow.dart';
 import 'widgets/client_basket_card.dart';
@@ -42,10 +45,29 @@ class _BasketDetailScreenState extends State<BasketDetailScreen> {
   BasketDto? _fresh;
   bool _reserving = false;
 
+  /// Rebuilds when reservations close, to disable the button on time.
+  Timer? _deadlineTimer;
+
   Future<BasketDto> _fetch() async {
     final basket = await _api.getBasket(widget.basketId);
     _fresh = basket;
+    _armDeadline(basket);
     return basket;
+  }
+
+  void _armDeadline(BasketDto basket) {
+    _deadlineTimer?.cancel();
+    final left = reservationDeadlineOf(basket).difference(DateTime.now());
+    if (left.isNegative || left > const Duration(hours: 24)) return;
+    _deadlineTimer = Timer(left + const Duration(seconds: 1), () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _deadlineTimer?.cancel();
+    super.dispose();
   }
 
   void _reload() {
@@ -263,7 +285,15 @@ class _DetailBody extends StatelessWidget {
                 const SizedBox(height: AppSpacing.md),
                 Text('Commerce', style: theme.titleLarge),
                 const SizedBox(height: AppSpacing.xs),
-                _StoreCard(store: store, distanceKm: basket.distanceKm),
+                _StoreCard(
+                  store: store,
+                  distanceKm: basket.distanceKm,
+                  onDirections: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => RouteScreen(api: api, store: store),
+                    ),
+                  ),
+                ),
               ],
             ],
           ),
@@ -370,10 +400,12 @@ class _InfoRow extends StatelessWidget {
 }
 
 class _StoreCard extends StatelessWidget {
-  const _StoreCard({required this.store, required this.distanceKm});
+  const _StoreCard(
+      {required this.store, required this.distanceKm, this.onDirections});
 
   final StoreDto store;
   final double? distanceKm;
+  final VoidCallback? onDirections;
 
   @override
   Widget build(BuildContext context) {
@@ -435,6 +467,20 @@ class _StoreCard extends StatelessWidget {
               longitude: store.longitude,
               semanticLabel: 'Plan : ${store.nom}, ${store.adresse}',
             ),
+            if (onDirections != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              OutlinedButton.icon(
+                key: const ValueKey('basket-directions'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.moduleFoodSaveDeep,
+                  side: const BorderSide(
+                      color: AppColors.moduleFoodSaveDeep, width: 1.4),
+                ),
+                onPressed: onDirections,
+                icon: const Icon(Icons.directions_outlined),
+                label: const Text('Itinéraire (voiture ou à pied)'),
+              ),
+            ],
           ],
         ],
       ),
@@ -513,8 +559,12 @@ class _ReserveBar extends StatelessWidget {
         ],
       );
     } else {
-      child = Row(
+      child = Column(
         key: const ValueKey('available'),
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
         children: [
           BasketPriceBlock(
             prixCentimes: basket.prixCentimes,
@@ -536,6 +586,17 @@ class _ReserveBar extends StatelessWidget {
                   : const Icon(Icons.shopping_bag_outlined),
               label: const Text('Réserver'),
             ),
+          ),
+        ],
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'Réservable jusqu\'à ${clockFr(reservationDeadlineOf(basket))} · '
+            'retrait sous ${basket.dureeReservationMinutes} min',
+            key: const ValueKey('reservable-until'),
+            textAlign: TextAlign.center,
+            style: theme.bodySmall
+                ?.copyWith(color: AppColors.textSecondaryStrong),
           ),
         ],
       );

@@ -46,7 +46,8 @@ class FoodSaveReservationService {
       'SELECT r.*, t.facture_numero AS t_facture_numero, '
       'u.prenom AS u_prenom, u.nom AS u_nom, '
       'p.commercant_id AS p_commercant_id, p.titre AS p_titre, '
-      'p.creneau_retrait_debut AS p_debut, p.creneau_retrait_fin AS p_fin '
+      'p.creneau_retrait_debut AS p_debut, p.creneau_retrait_fin AS p_fin, '
+      'p.duree_reservation_minutes AS p_duree '
       'FROM reservation r JOIN panier p ON p.id = r.panier_id '
       'LEFT JOIN transaction_ t ON t.id = r.transaction_id '
       'LEFT JOIN utilisateur u ON u.id = r.client_id ';
@@ -89,7 +90,12 @@ class FoodSaveReservationService {
     // 1) Take the units + create the reservation atomically.
     final now = ctx.now();
     final nowIso = now.toIso8601String();
-    final minEndIso = now.add(foodSaveMinPickupLead).toIso8601String();
+    // Reservations close "reservation duration" before the end of pickup
+    // (e.g. 22:45 for a basket ending at 23:00 with 15 min).
+    final duree = basket['duree_reservation_minutes'] as int? ??
+        foodSaveDefaultReservationMinutes;
+    final minEndIso =
+        now.add(FoodSaveRules.reservationLead(duree)).toIso8601String();
     late int reservationId;
     late int montant;
     await ctx.db.transaction((txn) async {
@@ -98,7 +104,8 @@ class FoodSaveReservationService {
         "statut = CASE WHEN quantite - ? = 0 THEN 'epuise' ELSE statut END, "
         'mis_a_jour_le = ? '
         'WHERE id = ? AND statut = ? AND quantite >= ? '
-        'AND date_expiration > ? AND creneau_retrait_fin > ?',
+        'AND date_expiration > ? AND creneau_retrait_fin > ? '
+        'AND duree_reservation_minutes = ?',
         [
           quantite,
           quantite,
@@ -108,6 +115,7 @@ class FoodSaveReservationService {
           quantite,
           nowIso,
           minEndIso,
+          duree,
         ],
       );
       final rows =
@@ -275,6 +283,14 @@ class FoodSaveReservationService {
         panierId: row['panier_id'] as int,
         reservationId: reservationId,
         details: {'par': 'client', 'rembourse': refunded});
+    await _notifyMerchant(
+      row,
+      type: FoodSaveNotificationType.reservationAnnulee,
+      event: 'reservation_annulee',
+      titre: 'Réservation annulée',
+      message: '${_who(row)} a annulé sa réservation de ${_what(row)}. '
+          'Les paniers sont remis en vente.',
+    );
     return (await getForViewer(reservationId, viewerId: clientId))!;
   }
 
@@ -423,6 +439,14 @@ class FoodSaveReservationService {
       reservationId: id,
       cleEvenement: 'retrait_effectue:$id',
     );
+    await _notifyMerchant(
+      fresh,
+      type: FoodSaveNotificationType.retraitEffectue,
+      event: 'retrait_effectue',
+      titre: 'Retrait effectué',
+      message: '${_who(fresh)} a retiré ${_what(fresh)}. '
+          'Merci d\'avoir sauvé ces paniers du gaspillage !',
+    );
     final who = dto.clientNom ?? 'votre client';
     return ScanResultDto(
       resultat: ScanOutcome.accepte,
@@ -566,6 +590,14 @@ class FoodSaveReservationService {
       reservationId: id,
       cleEvenement: 'reservation_expiree:$id',
     );
+    await _notifyMerchant(
+      row,
+      type: FoodSaveNotificationType.reservationExpiree,
+      event: 'reservation_expiree',
+      titre: 'Réservation expirée',
+      message: '${_who(row)} n\'est pas venu retirer ${_what(row)} à temps : '
+          'la réservation a expiré et les paniers sont remis en vente.',
+    );
     return true;
   }
 
@@ -680,7 +712,10 @@ class FoodSaveReservationService {
       now: now,
       pickupStart: DateTime.parse(row['p_debut'] as String),
       pickupEnd: DateTime.parse(row['p_fin'] as String),
-      ttl: ctx.qrTtl,
+      // The merchant's reservation duration for this basket.
+      ttl: row['p_duree'] is int
+          ? Duration(minutes: row['p_duree'] as int)
+          : ctx.qrTtl,
     );
     final updated = await ctx.db.update(
       'reservation',
@@ -733,9 +768,67 @@ class FoodSaveReservationService {
       reservationId: reservationId,
       cleEvenement: 'reservation_confirmee:$reservationId',
     );
+    final cash = row['mode_paiement'] == PaymentMethodType.especes.apiValue;
+    await _notifyMerchant(
+      row,
+      type: FoodSaveNotificationType.nouvelleReservation,
+      event: 'nouvelle_reservation',
+      titre: 'Nouvelle réservation',
+      message: '${_who(row)} a réservé ${_what(row)} · '
+          '${formatDinars(row['montant_centimes'] as int)}'
+          '${cash ? ' à encaisser en espèces au retrait' : ' payés'}. '
+          'Retrait avant ${_clock(expiry)}.',
+    );
     // Never delays nor fails the reservation: SMTP errors are only logged.
     unawaited(_emailQr(reservationId));
     return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Merchant notifications
+  // -------------------------------------------------------------------------
+
+  /// "Ameni G." from a [_select] row.
+  static String _who(Map<String, Object?> row) => shortName(
+      (row['u_prenom'] as String?) ?? 'Un client',
+      (row['u_nom'] as String?) ?? '');
+
+  /// "2 × « Panier du soir »" from a [_select] row.
+  static String _what(Map<String, Object?> row) =>
+      '${row['quantite_reservee']} × « ${row['p_titre']} »';
+
+  /// Local "HH:MM".
+  static String _clock(DateTime d) {
+    final l = d.toLocal();
+    return '${l.hour.toString().padLeft(2, '0')}:'
+        '${l.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// Notifies the basket's merchant about a reservation event (once per
+  /// event). Never throws: a notification must not break the operation.
+  Future<void> _notifyMerchant(
+    Map<String, Object?> row, {
+    required FoodSaveNotificationType type,
+    required String event,
+    required String titre,
+    required String message,
+  }) async {
+    final merchantId = row['p_commercant_id'] as int?;
+    if (merchantId == null) return;
+    try {
+      await ctx.notifier.notifyUser(
+        userId: merchantId,
+        type: type,
+        titre: titre,
+        message: message,
+        panierId: row['panier_id'] as int,
+        reservationId: row['id'] as int,
+        cleEvenement: 'commercant:$event:${row['id']}',
+      );
+    } catch (e, st) {
+      developer.log('merchant notification failed',
+          error: e, stackTrace: st, name: 'foodsave');
+    }
   }
 
   /// Sends the pickup QR code by e-mail to the client (if a mailer is set).
@@ -875,8 +968,11 @@ class FoodSaveReservationService {
       return 'Ce panier a expiré';
     }
     if ((basket['creneau_retrait_fin'] as String).compareTo(minEndIso) <= 0) {
-      return 'Le créneau de retrait est terminé ou se termine dans moins de '
-          '${foodSaveMinPickupLead.inMinutes} minutes';
+      final duree = basket['duree_reservation_minutes'] as int? ??
+          foodSaveDefaultReservationMinutes;
+      return 'Réservations closes : ce panier expire dans moins de '
+          '${FoodSaveRules.reservationLead(duree).inMinutes} minutes '
+          '(durée de réservation)';
     }
     if (status == BasketStatus.epuise || available <= 0) {
       return 'Ce panier est épuisé';

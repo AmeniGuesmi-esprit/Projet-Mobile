@@ -1,5 +1,6 @@
 import '../enums.dart';
 import 'foodsave_enums.dart';
+import 'foodsave_rules.dart';
 
 // All FoodSave timestamps travel as UTC ISO-8601 strings ("...Z").
 // Parse with [_date]; the app converts with `.toLocal()` for display.
@@ -67,6 +68,7 @@ class BasketDto {
     required this.statut,
     required this.commercantId,
     required this.creeLe,
+    this.dureeReservationMinutes = foodSaveDefaultReservationMinutes,
     this.image,
     this.commerce,
     this.distanceKm,
@@ -90,6 +92,10 @@ class BasketDto {
   final BasketStatus statut;
   final int commercantId;
   final DateTime creeLe;
+
+  /// Minutes a reservation (its QR code) stays valid — see
+  /// [FoodSaveRules.qrExpiry].
+  final int dureeReservationMinutes;
 
   /// Embedded store (always present in client listings).
   final StoreDto? commerce;
@@ -116,6 +122,9 @@ class BasketDto {
         statut: BasketStatus.parse(json['statut'] as String),
         commercantId: json['commercant_id'] as int,
         creeLe: _date(json['cree_le']),
+        dureeReservationMinutes:
+            json['duree_reservation_minutes'] as int? ??
+                foodSaveDefaultReservationMinutes,
         commerce: json['commerce'] == null
             ? null
             : StoreDto.fromJson(json['commerce'] as Map<String, dynamic>),
@@ -139,6 +148,7 @@ class BasketDto {
         'statut': statut.apiValue,
         'commercant_id': commercantId,
         'cree_le': _iso(creeLe),
+        'duree_reservation_minutes': dureeReservationMinutes,
         'commerce': commerce?.toJson(),
         'distance_km': distanceKm,
         'reservations_actives': reservationsActives,
@@ -407,5 +417,44 @@ class MerchantStatsDto {
         'taux_retrait': tauxRetrait,
         'par_jour': parJour.map((d) => d.toJson()).toList(),
         'par_statut': parStatut,
+      };
+}
+
+/// A route from the client to a store (`GET /foodsave/geo/route`).
+class RouteDto {
+  const RouteDto({
+    required this.mode,
+    required this.distanceMetres,
+    required this.dureeSecondes,
+    required this.points,
+  });
+
+  final TravelMode mode;
+  final int distanceMetres;
+  final int dureeSecondes;
+
+  /// Polyline, `[latitude, longitude]` pairs from start to destination.
+  final List<(double, double)> points;
+
+  factory RouteDto.fromJson(Map<String, dynamic> json) => RouteDto(
+        mode: TravelMode.parse(json['mode'] as String),
+        distanceMetres: (json['distance_m'] as num).round(),
+        dureeSecondes: (json['duree_s'] as num).round(),
+        points: [
+          for (final p in json['points'] as List)
+            (
+              ((p as List)[0] as num).toDouble(),
+              (p[1] as num).toDouble(),
+            ),
+        ],
+      );
+
+  Map<String, dynamic> toJson() => {
+        'mode': mode.apiValue,
+        'distance_m': distanceMetres,
+        'duree_s': dureeSecondes,
+        'points': [
+          for (final (lat, lng) in points) [lat, lng],
+        ],
       };
 }

@@ -46,11 +46,18 @@ class AppDatabase {
   }
 
   /// v1: users + payments. v2: FoodSave (see foodsave_schema.dart).
-  static const int schemaVersion = 2;
+  /// v3: per-basket reservation duration (`panier.duree_reservation_minutes`).
+  static const int schemaVersion = 3;
 
   static Future<void> _upgradeSchema(
       Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) await createFoodSaveSchema(db);
+    if (oldVersion < 2) {
+      // Creates the v3 tables directly.
+      await createFoodSaveSchema(db);
+    } else if (oldVersion < 3) {
+      await db.execute('ALTER TABLE panier ADD COLUMN '
+          'duree_reservation_minutes INTEGER NOT NULL DEFAULT 30');
+    }
   }
 
   static Future<void> _enableForeignKeys(DatabaseExecutor db) async =>

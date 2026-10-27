@@ -45,6 +45,7 @@ CREATE TABLE panier (
   creneau_retrait_debut TEXT NOT NULL,
   creneau_retrait_fin TEXT NOT NULL,
   date_expiration TEXT NOT NULL,
+  duree_reservation_minutes INTEGER NOT NULL DEFAULT 30,
   statut TEXT NOT NULL DEFAULT 'disponible',
   commercant_id INTEGER NOT NULL REFERENCES utilisateur(id) ON DELETE CASCADE,
   cree_le TEXT NOT NULL,

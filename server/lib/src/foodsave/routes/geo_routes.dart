@@ -8,6 +8,9 @@ import '../../http_helpers.dart';
 import '../foodsave_context.dart';
 import '../services/geo_location_service.dart';
 
+/// Longest client → store route we compute (km, straight line).
+const double maxRouteKm = 200;
+
 /// Client position + in-app notification routes (any authenticated role).
 Router buildFoodSaveGeoRoutes(FoodSaveContext ctx) {
   final geo = FoodSaveGeoService(ctx);
@@ -60,6 +63,54 @@ Router buildFoodSaveGeoRoutes(FoodSaveContext ctx) {
         throw ApiError.notFound('Aucune adresse trouvée pour cette position');
       }
       return jsonResponse({'adresse': adresse});
+    });
+  });
+
+  // ---- Itinéraire client -> commerce (voiture / à pied) ----
+
+  router.get('/foodsave/geo/route', (Request request) {
+    return guard(() async {
+      final q = request.url.queryParameters;
+      double? read(String key) => double.tryParse(q[key] ?? '');
+      final fromLat = read('from_lat');
+      final fromLng = read('from_lng');
+      final toLat = read('to_lat');
+      final toLng = read('to_lng');
+      if (fromLat == null ||
+          fromLng == null ||
+          toLat == null ||
+          toLng == null ||
+          !isValidLatLng(fromLat, fromLng) ||
+          !isValidLatLng(toLat, toLng)) {
+        throw ApiError.badRequest('Coordonnées GPS invalides');
+      }
+      final TravelMode mode;
+      try {
+        mode = TravelMode.parse(q['mode'] ?? TravelMode.voiture.apiValue);
+      } on ArgumentError {
+        throw ApiError.badRequest('Mode de trajet inconnu (voiture ou pied)');
+      }
+      if (haversineKm(fromLat, fromLng, toLat, toLng) > maxRouteKm) {
+        throw ApiError.badRequest(
+            'Ce commerce est trop loin pour calculer un itinéraire '
+            '(plus de ${maxRouteKm.round()} km)');
+      }
+      final planner = ctx.routePlanner;
+      if (planner == null) {
+        throw ApiError(503, 'Calcul d\'itinéraire indisponible');
+      }
+      final route = await planner.route(
+        fromLatitude: fromLat,
+        fromLongitude: fromLng,
+        toLatitude: toLat,
+        toLongitude: toLng,
+        mode: mode,
+      );
+      if (route == null) {
+        throw ApiError(503,
+            'Itinéraire indisponible pour le moment : réessayez plus tard');
+      }
+      return jsonResponse(route.toJson());
     });
   });
 

@@ -69,6 +69,19 @@ class FoodSaveApi {
     }
   }
 
+  /// Route from a position to a store, by car or on foot (OpenStreetMap
+  /// routing, via the server).
+  Future<RouteDto> routeTo({
+    required double fromLatitude,
+    required double fromLongitude,
+    required double toLatitude,
+    required double toLongitude,
+    required TravelMode mode,
+  }) async =>
+      RouteDto.fromJson(await _client.getJson('/foodsave/geo/route'
+          '?from_lat=$fromLatitude&from_lng=$fromLongitude'
+          '&to_lat=$toLatitude&to_lng=$toLongitude&mode=${mode.apiValue}'));
+
   // ------------------------------------------------------ merchant baskets
 
   Future<List<BasketDto>> listMyBaskets({BasketStatus? statut}) async {
@@ -92,6 +105,7 @@ class FoodSaveApi {
     required DateTime creneauRetraitDebut,
     required DateTime creneauRetraitFin,
     required DateTime dateExpiration,
+    int dureeReservationMinutes = foodSaveDefaultReservationMinutes,
   }) async {
     final data = await _client.postJson('/foodsave/merchant/baskets', {
       'titre': titre,
@@ -103,6 +117,7 @@ class FoodSaveApi {
       'creneau_retrait_debut': _iso(creneauRetraitDebut),
       'creneau_retrait_fin': _iso(creneauRetraitFin),
       'date_expiration': _iso(dateExpiration),
+      'duree_reservation_minutes': dureeReservationMinutes,
     });
     return (
       panier: BasketDto.fromJson(data['panier'] as Map<String, dynamic>),
@@ -122,6 +137,7 @@ class FoodSaveApi {
     DateTime? creneauRetraitDebut,
     DateTime? creneauRetraitFin,
     DateTime? dateExpiration,
+    int? dureeReservationMinutes,
   }) async =>
       BasketDto.fromJson(
           await _client.patchJson('/foodsave/merchant/baskets/$id', {
@@ -136,6 +152,7 @@ class FoodSaveApi {
         if (creneauRetraitFin != null)
           'creneau_retrait_fin': _iso(creneauRetraitFin),
         if (dateExpiration != null) 'date_expiration': _iso(dateExpiration),
+        'duree_reservation_minutes': ?dureeReservationMinutes,
       }));
 
   /// Cancels the basket and its active reservations (clients are notified,
@@ -196,6 +213,7 @@ class FoodSaveApi {
     double? latitude,
     double? longitude,
     double? rayonKm,
+    int? reductionMin,
     FoodCategory? categorie,
     String? recherche,
     BasketSort tri = BasketSort.distance,
@@ -204,6 +222,7 @@ class FoodSaveApi {
       if (latitude != null) 'lat=$latitude',
       if (longitude != null) 'lng=$longitude',
       if (rayonKm != null) 'rayon_km=$rayonKm',
+      if (reductionMin != null) 'reduction_min=$reductionMin',
       if (categorie != null) 'categorie=${categorie.apiValue}',
       if (recherche != null && recherche.trim().isNotEmpty)
         'q=${Uri.encodeQueryComponent(recherche.trim())}',

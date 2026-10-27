@@ -8,10 +8,12 @@ import 'package:proxilife_server/src/email/email_sender.dart';
 import 'package:proxilife_server/src/foodsave/foodsave_context.dart';
 import 'package:proxilife_server/src/foodsave/foodsave_schema.dart';
 import 'package:proxilife_server/src/foodsave/services/reverse_geocoder.dart';
+import 'package:proxilife_server/src/foodsave/services/route_planner.dart';
 import 'package:proxilife_server/src/repositories/payment_method_repository.dart';
 import 'package:proxilife_server/src/repositories/transaction_repository.dart';
 import 'package:proxilife_server/src/repositories/user_repository.dart';
 import 'package:proxilife_server/src/services/payment_service.dart';
+import 'package:proxilife_shared/proxilife_shared.dart';
 import 'package:shelf/shelf.dart';
 import 'package:test/test.dart';
 
@@ -22,6 +24,29 @@ class _NoEmail implements EmailSender {
     required String prenom,
     required String code,
   }) async {}
+}
+
+class _FakePlanner implements RoutePlanner {
+  final List<TravelMode> modes = [];
+  bool unavailable = false;
+
+  @override
+  Future<RouteDto?> route({
+    required double fromLatitude,
+    required double fromLongitude,
+    required double toLatitude,
+    required double toLongitude,
+    required TravelMode mode,
+  }) async {
+    modes.add(mode);
+    if (unavailable) return null;
+    return RouteDto(
+      mode: mode,
+      distanceMetres: mode == TravelMode.voiture ? 5295 : 4644,
+      dureeSecondes: mode == TravelMode.voiture ? 397 : 3714,
+      points: [(fromLatitude, fromLongitude), (toLatitude, toLongitude)],
+    );
+  }
 }
 
 class _FakeGeocoder implements ReverseGeocoder {
@@ -72,9 +97,50 @@ void main() {
     });
   });
 
+  group('parseOsrmRoute', () {
+    test('GeoJSON [lng, lat] becomes (lat, lng); distance and duration', () {
+      final route = parseOsrmRoute({
+        'code': 'Ok',
+        'routes': [
+          {
+            'distance': 5295.4,
+            'duration': 396.6,
+            'geometry': {
+              'type': 'LineString',
+              'coordinates': [
+                [10.1814, 36.8064],
+                [10.1718, 36.7751],
+              ],
+            },
+          },
+        ],
+      }, TravelMode.voiture)!;
+      expect(route.mode, TravelMode.voiture);
+      expect(route.distanceMetres, 5295);
+      expect(route.dureeSecondes, 397);
+      expect(route.points, [(36.8064, 10.1814), (36.7751, 10.1718)]);
+    });
+
+    test('no route / malformed answer → null', () {
+      expect(parseOsrmRoute({'code': 'NoRoute'}, TravelMode.pied), isNull);
+      expect(
+          parseOsrmRoute({'code': 'Ok', 'routes': []}, TravelMode.pied),
+          isNull);
+      expect(
+          parseOsrmRoute({
+            'code': 'Ok',
+            'routes': [
+              {'distance': 1, 'duration': 1, 'geometry': {}},
+            ],
+          }, TravelMode.pied),
+          isNull);
+    });
+  });
+
   group('GET /foodsave/geo/reverse', () {
     late AppDatabase database;
     late _FakeGeocoder geocoder;
+    late _FakePlanner planner;
     late Handler handler;
     late String token;
 
@@ -86,6 +152,7 @@ void main() {
       if (hasFoodSave.isEmpty) await createFoodSaveSchema(db);
       final users = UserRepository(db);
       geocoder = _FakeGeocoder();
+      planner = _FakePlanner();
       handler = buildApp(
         database,
         const ServerConfig(
@@ -110,6 +177,7 @@ void main() {
           ),
           uploadsDir: 'build/test_uploads',
           geocoder: geocoder,
+          routePlanner: planner,
         ),
       );
       final id = await db.insert('utilisateur', {
@@ -130,9 +198,9 @@ void main() {
     tearDown(() async => database.close());
 
     Future<(int, Map<String, dynamic>)> get(String query,
-        {bool auth = true}) async {
+        {bool auth = true, String path = 'reverse'}) async {
       final response = await handler(Request(
-          'GET', Uri.parse('http://test/foodsave/geo/reverse?$query'),
+          'GET', Uri.parse('http://test/foodsave/geo/$path?$query'),
           headers: {if (auth) 'authorization': 'Bearer $token'}));
       return (
         response.statusCode,
@@ -157,6 +225,36 @@ void main() {
       expect(status, 404);
       expect(body['error'], contains('Aucune adresse'));
       expect((await get('lat=36.8&lng=10.18', auth: false)).$1, 401);
+    });
+
+    const trip = 'from_lat=36.8064&from_lng=10.1814&to_lat=36.7751&to_lng=10.1718';
+
+    test('route by car (default) and on foot', () async {
+      final (status, body) = await get(trip, path: 'route');
+      expect(status, 200, reason: '$body');
+      final car = RouteDto.fromJson(body);
+      expect(car.mode, TravelMode.voiture);
+      expect(car.distanceMetres, 5295);
+      expect(car.points.first, (36.8064, 10.1814));
+
+      final (_, walkBody) = await get('$trip&mode=pied', path: 'route');
+      expect(RouteDto.fromJson(walkBody).dureeSecondes, 3714);
+      expect(planner.modes, [TravelMode.voiture, TravelMode.pied]);
+    });
+
+    test('route: bad input → 400, too far → 400, no route → 503', () async {
+      expect((await get('$trip&mode=velo', path: 'route')).$1, 400);
+      expect((await get('from_lat=36.8&from_lng=10.18', path: 'route')).$1,
+          400);
+      final (far, farBody) = await get(
+          'from_lat=36.8&from_lng=10.18&to_lat=48.85&to_lng=2.35',
+          path: 'route');
+      expect(far, 400);
+      expect(farBody['error'], contains('trop loin'));
+      expect(planner.modes, isEmpty);
+      planner.unavailable = true;
+      expect((await get(trip, path: 'route')).$1, 503);
+      expect((await get(trip, path: 'route', auth: false)).$1, 401);
     });
   });
 }

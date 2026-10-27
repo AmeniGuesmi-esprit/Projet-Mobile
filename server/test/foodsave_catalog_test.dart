@@ -15,6 +15,7 @@ import 'package:proxilife_server/src/repositories/payment_method_repository.dart
 import 'package:proxilife_server/src/repositories/transaction_repository.dart';
 import 'package:proxilife_server/src/repositories/user_repository.dart';
 import 'package:proxilife_server/src/services/payment_service.dart';
+import 'package:proxilife_shared/proxilife_shared.dart';
 import 'package:shelf/shelf.dart';
 import 'package:test/test.dart';
 
@@ -329,6 +330,15 @@ void main() {
               iso(CatalogTestServer.clock.add(const Duration(hours: 2))),
         },
         {'creneau_retrait_fin': 'pas une date'},
+        // Expiry less than 1 h after the start.
+        {
+          'creneau_retrait_fin': null,
+          'date_expiration':
+              iso(CatalogTestServer.clock.add(const Duration(minutes: 119))),
+        },
+        {'duree_reservation_minutes': 4},
+        {'duree_reservation_minutes': 241},
+        {'duree_reservation_minutes': 'trente'},
       ]) {
         res = await ts.call('POST', '/foodsave/merchant/baskets',
             token: token, body: ts.basketBody(bad));
@@ -346,6 +356,37 @@ void main() {
       expect(panier['reservations_actives'], 0);
       expect(panier['commerce']['nom'], 'Boulangerie Ameni');
       expect((panier['creneau_retrait_fin'] as String).endsWith('Z'), isTrue);
+      expect(panier['duree_reservation_minutes'], 30);
+
+      // New form: start + expiry only → pickup until the expiry; custom
+      // reservation duration is stored.
+      res = await ts.call('POST', '/foodsave/merchant/baskets',
+          token: token,
+          body: ts.basketBody({
+            'creneau_retrait_debut': iso(CatalogTestServer.clock),
+            'creneau_retrait_fin': null,
+            'date_expiration':
+                iso(CatalogTestServer.clock.add(const Duration(hours: 1))),
+            'duree_reservation_minutes': 45,
+          }));
+      expect(res.$1, 201, reason: '${res.$2}');
+      final simple = res.$2['panier'] as Map<String, dynamic>;
+      expect(simple['creneau_retrait_fin'], simple['date_expiration']);
+      expect(simple['duree_reservation_minutes'], 45);
+
+      // Moving the expiry keeps such a window tied to it.
+      final later =
+          iso(CatalogTestServer.clock.add(const Duration(hours: 4)));
+      res = await ts.call(
+          'PATCH', '/foodsave/merchant/baskets/${simple['id']}',
+          token: token,
+          body: {'date_expiration': later, 'duree_reservation_minutes': 20});
+      expect(res.$1, 200, reason: '${res.$2}');
+      expect(res.$2['creneau_retrait_fin'], res.$2['date_expiration']);
+      expect(res.$2['duree_reservation_minutes'], 20);
+      await ts.call(
+          'DELETE', '/foodsave/merchant/baskets/${simple['id']}',
+          token: token);
 
       res = await ts.call('GET', '/foodsave/merchant/baskets', token: token);
       expect(res.$1, 200);
@@ -584,12 +625,14 @@ void main() {
       await ts.db.db.update('panier', {
         'date_expiration': iso(CatalogTestServer.clock),
       }, where: 'id = ?', whereArgs: [expired]);
-      await ts.createBasket(m1, {
-        'titre': 'Fin proche',
+      // A 4-minute window can't be created any more (reservation duration
+      // >= 5 min): shorten an existing one instead.
+      final closing = (await ts.createBasket(m1, {'titre': 'Fin proche'}))['id'];
+      await ts.db.db.update('panier', {
         'creneau_retrait_debut': iso(CatalogTestServer.clock),
         'creneau_retrait_fin':
             iso(CatalogTestServer.clock.add(const Duration(minutes: 4))),
-      });
+      }, where: 'id = ?', whereArgs: [closing]);
       final cancelled = (await ts.createBasket(m1, {'titre': 'Annulé'}))['id'];
       await ts.call('POST', '/foodsave/merchant/baskets/$cancelled/cancel',
           token: m1);
@@ -641,8 +684,29 @@ void main() {
           token: client);
       expect(titles(res.$2), ['Légumes du marché']);
 
+      // Discount filter: only baskets at -N % or more.
+      final all = (await ts.call('GET', '/foodsave/baskets', token: client))
+          .$2['items'] as List;
+      int pct(Map<String, dynamic> b) => FoodSaveRules.discountPercent(
+          b['prix_centimes'] as int, b['prix_initial_centimes'] as int);
+      final best = all.cast<Map<String, dynamic>>().map(pct).reduce(
+          (a, b) => a > b ? a : b);
+      res = await ts.call(
+          'GET', '/foodsave/baskets?reduction_min=$best&tri=reduction',
+          token: client);
+      final filtered = (res.$2['items'] as List).cast<Map<String, dynamic>>();
+      expect(filtered, isNotEmpty);
+      expect(filtered.every((b) => pct(b) >= best), isTrue);
+      expect(filtered.length, lessThanOrEqualTo(all.length));
+      res = await ts.call('GET', '/foodsave/baskets?reduction_min=99',
+          token: client);
+      expect((res.$2['items'] as List).every(
+              (b) => pct(b as Map<String, dynamic>) >= 99),
+          isTrue);
+
       for (final bad in ['rayon_km=-1', 'rayon_km=abc', 'tri=nom',
-          'categorie=viande']) {
+          'categorie=viande', 'reduction_min=0', 'reduction_min=100',
+          'reduction_min=abc']) {
         res = await ts.call('GET', '/foodsave/baskets?$bad', token: client);
         expect(res.$1, 400, reason: bad);
       }

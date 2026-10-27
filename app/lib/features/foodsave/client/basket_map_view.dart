@@ -63,6 +63,7 @@ class BasketMapView extends StatefulWidget {
     required this.api,
     required this.baskets,
     required this.onOpenBasket,
+    this.onDirections,
     this.userLatitude,
     this.userLongitude,
     this.tileLayer,
@@ -71,6 +72,9 @@ class BasketMapView extends StatefulWidget {
   final FoodSaveApi api;
   final List<BasketDto> baskets;
   final ValueChanged<BasketDto> onOpenBasket;
+
+  /// Opens the route to a store (hidden when null).
+  final ValueChanged<StoreDto>? onDirections;
   final double? userLatitude;
   final double? userLongitude;
 
@@ -253,6 +257,9 @@ class _BasketMapViewState extends State<BasketMapView> {
                     key: ValueKey('preview-${selected.store.id}'),
                     group: selected,
                     onOpen: widget.onOpenBasket,
+                    onDirections: widget.onDirections == null
+                        ? null
+                        : () => widget.onDirections!(selected!.store),
                     onClose: () => setState(() => _selectedStoreId = null),
                   ),
           ),
@@ -369,11 +376,13 @@ class _StorePreview extends StatelessWidget {
     required this.group,
     required this.onOpen,
     required this.onClose,
+    this.onDirections,
   });
 
   final _StoreGroup group;
   final ValueChanged<BasketDto> onOpen;
   final VoidCallback onClose;
+  final VoidCallback? onDirections;
 
   @override
   Widget build(BuildContext context) {
@@ -424,6 +433,22 @@ class _StorePreview extends StatelessWidget {
                   'dans ce commerce',
                   style: theme.bodySmall
                       ?.copyWith(color: AppColors.textSecondaryStrong),
+                ),
+              ),
+            if (onDirections != null)
+              Padding(
+                padding: const EdgeInsets.only(
+                    top: AppSpacing.xs, right: AppSpacing.sm),
+                child: OutlinedButton.icon(
+                  key: const ValueKey('store-directions'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.moduleFoodSaveDeep,
+                    side: const BorderSide(
+                        color: AppColors.moduleFoodSaveDeep, width: 1.4),
+                  ),
+                  onPressed: onDirections,
+                  icon: const Icon(Icons.directions_outlined),
+                  label: const Text('Itinéraire'),
                 ),
               ),
           ],

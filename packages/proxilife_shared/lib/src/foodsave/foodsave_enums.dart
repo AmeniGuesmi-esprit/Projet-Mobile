@@ -86,7 +86,13 @@ enum FoodSaveNotificationType {
   qrExpireBientot('qr_expire_bientot'),
   reservationExpiree('reservation_expiree'),
   panierAnnule('panier_annule'),
-  retraitEffectue('retrait_effectue');
+  retraitEffectue('retrait_effectue'),
+
+  /// Merchant side: a client reserved (and paid / chose cash).
+  nouvelleReservation('nouvelle_reservation'),
+
+  /// Merchant side: a client cancelled a reservation.
+  reservationAnnulee('reservation_annulee');
 
   const FoodSaveNotificationType(this.apiValue);
   final String apiValue;
@@ -127,4 +133,22 @@ enum BasketSort {
   static BasketSort parse(String value) =>
       values.firstWhere((e) => e.apiValue == value,
           orElse: () => throw ArgumentError('Tri inconnu : $value'));
+}
+
+/// How the client travels to a store (route planning).
+enum TravelMode {
+  voiture('voiture'),
+  pied('pied');
+
+  const TravelMode(this.apiValue);
+  final String apiValue;
+
+  static TravelMode parse(String value) =>
+      values.firstWhere((e) => e.apiValue == value,
+          orElse: () => throw ArgumentError('Mode de trajet inconnu : $value'));
+
+  String get label => switch (this) {
+        TravelMode.voiture => 'En voiture',
+        TravelMode.pied => 'À pied',
+      };
 }

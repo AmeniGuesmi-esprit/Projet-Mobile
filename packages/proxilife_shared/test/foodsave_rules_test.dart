@@ -81,19 +81,49 @@ void main() {
         () => expect(reserve(endIn: const Duration(minutes: 3)), isFalse));
   });
 
+  group('reservation deadline', () {
+    final end = DateTime.utc(2026, 10, 27, 23);
+
+    test('closes "duration" before the end (min 5 min)', () {
+      expect(
+          FoodSaveRules.reservationDeadline(
+              pickupEnd: end, reservationMinutes: 15),
+          DateTime.utc(2026, 10, 27, 22, 45));
+      expect(
+          FoodSaveRules.reservationDeadline(
+              pickupEnd: end, reservationMinutes: 0),
+          DateTime.utc(2026, 10, 27, 22, 55));
+    });
+
+    bool can(DateTime now) => FoodSaveRules.canReserve(
+          status: BasketStatus.disponible,
+          available: 3,
+          quantity: 1,
+          pickupEnd: end,
+          basketExpiry: end,
+          now: now,
+          reservationMinutes: 15,
+        );
+
+    test('22:44 can reserve, 22:45 cannot', () {
+      expect(can(DateTime.utc(2026, 10, 27, 22, 44)), isTrue);
+      expect(can(DateTime.utc(2026, 10, 27, 22, 45)), isFalse);
+    });
+  });
+
   group('qrExpiry', () {
     final start = DateTime.utc(2026, 10, 13, 18);
     final end = DateTime.utc(2026, 10, 13, 19);
     const ttl = Duration(minutes: 30);
 
-    test('before the window: valid until the window ends', () {
+    test('before the window: ttl counted from the opening', () {
       expect(
           FoodSaveRules.qrExpiry(
               now: DateTime.utc(2026, 10, 13, 12),
               pickupStart: start,
               pickupEnd: end,
               ttl: ttl),
-          end);
+          start.add(ttl));
     });
 
     test('inside the window: ttl after generation', () {
@@ -130,6 +160,39 @@ void main() {
         );
 
     test('valid basket', () => expect(err(), isNull));
+    test('expiry at least 1 h after the start', () {
+      String? e(Duration open) => FoodSaveRules.basketError(
+            title: 'Panier du soir',
+            content: 'Pain, viennoiseries',
+            priceCents: 500,
+            initialPriceCents: 1500,
+            quantity: 3,
+            pickupStart: start,
+            pickupEnd: start.add(open),
+            expiry: start.add(open),
+          );
+      expect(e(const Duration(minutes: 59)), contains('au moins 1 h'));
+      expect(e(const Duration(hours: 1)), isNull);
+    });
+    test('reservation duration between 5 and 240 minutes', () {
+      String? e(int minutes) => FoodSaveRules.basketError(
+            title: 'Panier du soir',
+            content: 'Pain, viennoiseries',
+            priceCents: 500,
+            initialPriceCents: 1500,
+            quantity: 3,
+            pickupStart: start,
+            pickupEnd: start.add(const Duration(hours: 2)),
+            expiry: start.add(const Duration(hours: 2)),
+            reservationMinutes: minutes,
+          );
+      expect(e(4), contains('durée de réservation'));
+      expect(e(241), isNotNull);
+      expect(e(5), isNull);
+      expect(e(120), isNull);
+      // Longer than the 2 h between the start and the expiry.
+      expect(e(121), contains('ne peut pas dépasser'));
+    });
     test('initial price must exceed reduced price',
         () => expect(err(initial: 500), isNotNull));
     test('negative quantity rejected', () => expect(err(qty: -1), isNotNull));

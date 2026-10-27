@@ -57,6 +57,15 @@ class FoodSaveCatalogQueryService {
             'Rayon de recherche invalide (entre 0 et 100 km)');
       }
     }
+    int? minDiscount;
+    final rawDiscount = params['reduction_min'];
+    if (rawDiscount != null && rawDiscount.isNotEmpty) {
+      minDiscount = int.tryParse(rawDiscount);
+      if (minDiscount == null || minDiscount < 1 || minDiscount > 99) {
+        throw ApiError.badRequest(
+            'Réduction minimale invalide (entre 1 et 99 %)');
+      }
+    }
     final rawCategory = params['categorie'];
     final category = rawCategory == null || rawCategory.isEmpty
         ? null
@@ -107,12 +116,10 @@ class FoodSaveCatalogQueryService {
           : haversineKm(position.latitude, position.longitude,
               store.latitude, store.longitude);
       if (radius != null && distance != null && distance > radius) continue;
-      entries.add((
-        rank: i,
-        distance: distance,
-        basket: basketFromRow(row,
-            store: store, distanceKm: _roundKm(distance)),
-      ));
+      final basket =
+          basketFromRow(row, store: store, distanceKm: _roundKm(distance));
+      if (minDiscount != null && _discount(basket) < minDiscount) continue;
+      entries.add((rank: i, distance: distance, basket: basket));
     }
 
     int byDistance(
