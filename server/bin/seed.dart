@@ -5,8 +5,14 @@ import 'package:proxilife_server/src/db/database.dart';
 import 'package:proxilife_server/src/config/server_config.dart';
 
 /// Seed data: demo accounts. Default demo accounts share `Proxilife2026!`;
-/// two extra accounts (fawzi.saidi@esprit.tn / ameni.guesmi@esprit.tn) have
-/// their own passwords.
+/// the team accounts have their own passwords.
+///
+/// Re-running the seed refreshes password, balance, role and RIB of known
+/// accounts, so the demo state stays deterministic.
+///
+/// NOTE: fawzi.saidi@esprit.tn is intentionally NOT seeded — that account is
+/// created live through the SMTP registration flow (e-mail verification
+/// demo). Registering it requires a password with a digit: `FawziSaidi2026`.
 Future<void> main() async {
   final config = await ServerConfig.load();
   final db = await AppDatabase.open(config.dbPath);
@@ -30,7 +36,22 @@ Future<void> main() async {
       whereArgs: [email],
     );
     if (existing.isNotEmpty) {
-      return existing.first['id'] as int;
+      final id = existing.first['id'] as int;
+      await db.db.update(
+        'utilisateur',
+        {
+          'nom': nom,
+          'prenom': prenom,
+          'telephone': telephone,
+          'mot_de_passe_hash': hasher.hashPassword(password),
+          'role': role,
+          'rib': rib,
+          'solde_centimes': soldeCentimes,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      return id;
     }
     return db.db.insert('utilisateur', {
       'nom': nom,
@@ -70,15 +91,7 @@ Future<void> main() async {
     telephone: '0600000000',
     role: 'admin',
   );
-  final fawziId = await upsertUser(
-    nom: 'Saidi',
-    prenom: 'Fawzi',
-    email: 'fawzi.saidi@esprit.tn',
-    telephone: '98123456',
-    role: 'client',
-    soldeCentimes: 5000,
-    password: 'FawziSaidi221',
-  );
+  // fawzi.saidi@esprit.tn : volontairement non seedé (inscription SMTP live).
   final ameniId = await upsertUser(
     nom: 'Guesmi',
     prenom: 'Ameni',
@@ -86,7 +99,38 @@ Future<void> main() async {
     telephone: '22123456',
     role: 'conducteur',
     rib: '30004000011234567890173',
-    password: 'AmeniGuesmi112',
+    soldeCentimes: 2000,
+    password: 'AmeniGuesmi',
+  );
+  final marahId = await upsertUser(
+    nom: 'Mabrouk',
+    prenom: 'Marah',
+    email: 'marah.mabrouk@esprit.tn',
+    telephone: '55111222',
+    role: 'commercant',
+    rib: '30004000011234567890173',
+    soldeCentimes: 2500,
+    password: 'MarahMabrouk',
+  );
+  final farahId = await upsertUser(
+    nom: 'Chbeb',
+    prenom: 'Farah',
+    email: 'farah.chbeb@esprit.tn',
+    telephone: '23222333',
+    role: 'medecin',
+    rib: '30004000011234567890173',
+    soldeCentimes: 2500,
+    password: 'FarahChbeb',
+  );
+  final yasmineId = await upsertUser(
+    nom: 'Chakroun',
+    prenom: 'Yasmine',
+    email: 'yasmine.chakroun@esprit.tn',
+    telephone: '29222333',
+    role: 'coach',
+    rib: '30004000011234567890173',
+    soldeCentimes: 1500,
+    password: 'YasmineChakroun',
   );
 
   // A couple of payment methods for the client, for demos.
@@ -128,14 +172,21 @@ Future<void> main() async {
   }
 
   stdout.writeln('Seed termine.');
-  stdout.writeln('  client      : #$clientId  client@proxilife.fr');
+  stdout.writeln('  client      : #$clientId  client@proxilife.fr (50,00 DT)');
   stdout.writeln('  conducteur  : #$conducteurId  conducteur@proxilife.fr');
   stdout.writeln('  admin       : #$adminId  admin@proxilife.fr');
-  stdout.writeln('  fawzi       : #$fawziId  fawzi.saidi@esprit.tn');
-  stdout.writeln('  ameni       : #$ameniId  ameni.guesmi@esprit.tn');
+  stdout.writeln('  ameni       : #$ameniId  ameni.guesmi@esprit.tn (20,00 DT)');
+  stdout.writeln('  marah       : #$marahId  marah.mabrouk@esprit.tn (25,00 DT)');
+  stdout.writeln('  farah       : #$farahId  farah.chbeb@esprit.tn (25,00 DT)');
+  stdout
+      .writeln('  yasmine     : #$yasmineId  yasmine.chakroun@esprit.tn (15,00 DT)');
   stdout.writeln('Mot de passe commun (demo) : Proxilife2026!');
-  stdout.writeln('  fawzi.saidi@esprit.tn    : FawziSaidi221');
-  stdout.writeln('  ameni.guesmi@esprit.tn    : AmeniGuesmi112');
+  stdout.writeln('  ameni.guesmi@esprit.tn    : AmeniGuesmi');
+  stdout.writeln('  marah.mabrouk@esprit.tn   : MarahMabrouk');
+  stdout.writeln('  farah.chbeb@esprit.tn     : FarahChbeb');
+  stdout.writeln('  yasmine.chakroun@esprit.tn: YasmineChakroun');
+  stdout.writeln(
+      'fawzi.saidi@esprit.tn : NON seedé — inscription via SMTP (FawziSaidi2026)');
 
   await db.close();
 }
