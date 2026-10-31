@@ -31,6 +31,37 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   late final PaymentApi _payments = PaymentApi(widget.api);
   bool _loading = false;
 
+  bool get _isCredit =>
+      _transaction.direction == TransactionDirection.credit;
+
+  String get _methodLabel => switch (_transaction.moyenPaiementType) {
+        PaymentMethodType.carteBancaire => 'Carte bancaire',
+        PaymentMethodType.portefeuille => 'Portefeuille ProxiLife',
+        PaymentMethodType.especes => 'Espèces',
+        null => 'N° ${_transaction.idMoyenPaiement}',
+      };
+
+  String get _refundExplanation =>
+      switch (_transaction.moyenPaiementType) {
+        PaymentMethodType.carteBancaire =>
+          'Le montant de ${MoneyText.format(_transaction.montantCentimes)} '
+              'sera remboursé sur votre carte bancaire.',
+        PaymentMethodType.especes =>
+          'Le montant de ${MoneyText.format(_transaction.montantCentimes)} '
+              'vous sera restitué en main propre par le bénéficiaire.',
+        _ => 'Le montant de ${MoneyText.format(_transaction.montantCentimes)} '
+            'sera recrédité sur votre portefeuille.',
+      };
+
+  String get _refundNotification =>
+      switch (_transaction.moyenPaiementType) {
+        PaymentMethodType.carteBancaire =>
+          '${MoneyText.format(_transaction.montantCentimes)} remboursés sur votre carte',
+        PaymentMethodType.especes =>
+          '${MoneyText.format(_transaction.montantCentimes)} à restituer en espèces',
+        _ => '${MoneyText.format(_transaction.montantCentimes)} recrédités sur votre portefeuille',
+      };
+
   String _formatDate(String iso) {
     final date = DateTime.tryParse(iso);
     if (date == null) return iso;
@@ -43,9 +74,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Demander un remboursement ?'),
-        content: Text(
-          'Le montant de ${MoneyText.format(_transaction.montantCentimes)} sera recrédité sur votre portefeuille.',
-        ),
+        content: Text(_refundExplanation),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -64,13 +93,58 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       final updated = await _payments.refund(_transaction.id);
       await NotificationService.instance.show(
         title: 'Remboursement effectué',
-        body:
-            '${MoneyText.format(_transaction.montantCentimes)} recrédités sur votre portefeuille',
+        body: _refundNotification,
       );
       if (!mounted) return;
       setState(() => _transaction = updated);
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Remboursement effectué')));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _confirm() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.payments_outlined,
+            color: AppColors.primary, size: 40),
+        title: const Text('Confirmer la réception ?'),
+        content: Text(
+          'Vous confirmez avoir reçu '
+          '${MoneyText.format(_transaction.montantCentimes)} en espèces. '
+          'Cette action est définitive.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Pas encore'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Confirmer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _loading = true);
+    try {
+      final updated = await _payments.confirmTransaction(_transaction.id);
+      await NotificationService.instance.show(
+        title: 'Paiement confirmé',
+        body:
+            '${MoneyText.format(_transaction.montantCentimes)} reçus en espèces',
+      );
+      if (!mounted) return;
+      setState(() => _transaction = updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Réception confirmée')));
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -156,16 +230,21 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   Text(_transaction.factureNumero,
                       style: theme.textTheme.bodyMedium),
                   const Divider(height: AppSpacing.xl),
-                  _row('Bénéficiaire',
-                      _transaction.beneficiaireNom ?? '—'),
-                  _row('E-mail', _transaction.beneficiaireEmail ?? '—'),
+                  _row('Sens', _isCredit ? 'Reçu' : 'Envoyé'),
+                  if (_isCredit) ...[
+                    _row('Payeur', _transaction.payeurNom ?? '—'),
+                    _row('E-mail', _transaction.payeurEmail ?? '—'),
+                  ] else ...[
+                    _row('Bénéficiaire',
+                        _transaction.beneficiaireNom ?? '—'),
+                    _row('E-mail', _transaction.beneficiaireEmail ?? '—'),
+                  ],
                   if (_transaction.idReference != null)
                     _row('Référence', _transaction.idReference!),
                   _row('Date', _formatDate(_transaction.dateIso)),
                   _row('Devise', _transaction.devise),
                   if (_transaction.idMoyenPaiement != null)
-                    _row('Moyen de paiement',
-                        'N° ${_transaction.idMoyenPaiement}'),
+                    _row('Moyen de paiement', _methodLabel),
                 ],
               ),
             ),
@@ -173,13 +252,23 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             if (_loading)
               const Center(child: CircularProgressIndicator())
             else ...[
-              if (TransactionRules.canRefund(_transaction.statut))
+              if (_isCredit &&
+                  TransactionRules.canTransition(
+                      _transaction.statut, TransactionStatus.paye))
+                FilledButton.icon(
+                  onPressed: _confirm,
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: const Text('Confirmer la réception'),
+                ),
+              if (!_isCredit &&
+                  TransactionRules.canRefund(_transaction.statut))
                 OutlinedButton.icon(
                   onPressed: _refund,
                   icon: const Icon(Icons.undo),
                   label: const Text('Rembourser'),
                 ),
-              if (TransactionRules.canCancel(_transaction.statut))
+              if (!_isCredit &&
+                  TransactionRules.canCancel(_transaction.statut))
                 Padding(
                   padding: const EdgeInsets.only(top: AppSpacing.sm),
                   child: FilledButton.icon(
@@ -189,6 +278,18 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     onPressed: _cancel,
                     icon: const Icon(Icons.delete_outline),
                     label: const Text('Annuler la transaction'),
+                  ),
+                ),
+              if (_isCredit &&
+                  _transaction.statut == TransactionStatus.paye &&
+                  _transaction.moyenPaiementType ==
+                      PaymentMethodType.especes)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.sm),
+                  child: Text(
+                    'Paiement en espèces reçu et confirmé.',
+                    style: theme.textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
                   ),
                 ),
             ],

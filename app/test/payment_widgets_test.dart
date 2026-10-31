@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:proxilife/core/widgets/money_text.dart';
 import 'package:proxilife/core/widgets/status_chip.dart';
 import 'package:proxilife/features/payment/payment_api.dart';
+import 'package:proxilife/features/payment/widgets/direction_badge.dart';
 import 'package:proxilife_shared/proxilife_shared.dart';
 
 void main() {
@@ -41,5 +42,22 @@ void main() {
     );
     expect(find.textContaining('25'), findsWidgets);
     expect(find.textContaining('DT'), findsWidgets);
+  });
+
+  testWidgets('DirectionBadge shows Reçu / Envoyé', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              DirectionBadge(TransactionDirection.credit),
+              DirectionBadge(TransactionDirection.debit),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Reçu'), findsOneWidget);
+    expect(find.text('Envoyé'), findsOneWidget);
   });
 }

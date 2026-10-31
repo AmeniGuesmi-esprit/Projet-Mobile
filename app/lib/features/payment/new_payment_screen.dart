@@ -10,7 +10,9 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/widgets/money_text.dart';
 import '../../core/widgets/primary_button.dart';
 import '../../core/widgets/service_badge.dart';
+import 'biometric_guard.dart';
 import 'payment_api.dart';
+import 'recent_beneficiaries.dart';
 
 class NewPaymentScreen extends StatefulWidget {
   const NewPaymentScreen({super.key, required this.session});
@@ -28,17 +30,23 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   final _referenceController = TextEditingController();
 
   late final PaymentApi _payments = PaymentApi(widget.session.api);
+  late final BiometricGuard _biometric = BiometricGuard();
+  final RecentBeneficiaries _recents = RecentBeneficiaries();
 
   late Future<List<PaymentMethodDto>> _methodsFuture;
   ServiceType _service = ServiceType.ecoRoute;
   int? _selectedMethodId;
   bool _loading = false;
   String? _error;
+  List<RecentBeneficiary> _recentList = const [];
 
   @override
   void initState() {
     super.initState();
     _methodsFuture = _payments.listMethods();
+    _recents.load().then((entries) {
+      if (mounted) setState(() => _recentList = entries);
+    });
   }
 
   @override
@@ -54,6 +62,25 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
     if (!_formKey.currentState!.validate()) return;
     final cents = parseAmountToCents(_amountController.text);
     if (cents == null) return;
+
+    // Biometric confirmation when the user enabled it on their profile.
+    if (widget.session.biometricsEnabled) {
+      final result = await _biometric.confirm(
+        reason: 'Confirmez le paiement de ${MoneyText.format(cents)}',
+      );
+      if (!mounted) return;
+      switch (result) {
+        case BiometricResult.denied:
+          return; // user cancelled: abort silently
+        case BiometricResult.unavailable:
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Biométrie indisponible : paiement sans confirmation'),
+          ));
+        case BiometricResult.granted:
+          break;
+      }
+    }
+
     setState(() => _loading = true);
     try {
       final tx = await _payments.createTransaction(
@@ -63,10 +90,21 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
         idReference: _referenceController.text.trim(),
         idMoyenPaiement: _selectedMethodId,
       );
+      final beneficiaryEmail = _beneficiaryController.text.trim();
+      final entries = await _recents.remember(
+        email: beneficiaryEmail,
+        name: tx.beneficiaireNom,
+      );
       if (tx.statut == TransactionStatus.paye) {
         await NotificationService.instance.show(
           title: 'Paiement effectué',
           body: '${MoneyText.format(cents)} — ${ServiceMeta.of(_service).label}',
+        );
+      } else if (tx.statut == TransactionStatus.enAttente) {
+        await NotificationService.instance.show(
+          title: 'Paiement en attente',
+          body:
+              '${MoneyText.format(cents)} en espèces — le bénéficiaire confirmera la réception',
         );
       } else {
         await NotificationService.instance.show(
@@ -81,19 +119,29 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
           icon: Icon(
             tx.statut == TransactionStatus.paye
                 ? Icons.check_circle_outline
-                : Icons.error_outline,
+                : tx.statut == TransactionStatus.enAttente
+                    ? Icons.schedule_outlined
+                    : Icons.error_outline,
             color: tx.statut == TransactionStatus.paye
                 ? AppColors.success
-                : AppColors.error,
+                : tx.statut == TransactionStatus.enAttente
+                    ? AppColors.info
+                    : AppColors.error,
             size: 44,
           ),
-          title: Text(tx.statut == TransactionStatus.paye
-              ? 'Paiement effectué'
-              : 'Paiement échoué'),
+          title: Text(switch (tx.statut) {
+            TransactionStatus.paye => 'Paiement effectué',
+            TransactionStatus.enAttente => 'En attente de confirmation',
+            _ => 'Paiement échoué',
+          }),
           content: Text(
-            tx.statut == TransactionStatus.paye
-                ? '${MoneyText.format(cents)} vers ${tx.beneficiaireNom ?? tx.beneficiaireEmail ?? ''}\nFacture ${tx.factureNumero}'
-                : 'Rechargez votre portefeuille ou choisissez une autre méthode.',
+            switch (tx.statut) {
+              TransactionStatus.paye =>
+                '${MoneyText.format(cents)} vers ${tx.beneficiaireNom ?? tx.beneficiaireEmail ?? ''}\nFacture ${tx.factureNumero}',
+              TransactionStatus.enAttente =>
+                'Remettez ${MoneyText.format(cents)} en espèces à ${tx.beneficiaireNom ?? 'au bénéficiaire'} : la transaction passera à « Payé » lorsque le bénéficiaire aura confirmé la réception.',
+              _ => 'Solde insuffisant : réglez par carte ou en espèces.',
+            },
             textAlign: TextAlign.center,
           ),
           actions: [
@@ -105,6 +153,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
         ),
       );
       if (!mounted) return;
+      setState(() => _recentList = entries);
       Navigator.of(context).pop(true);
     } on ApiException catch (e) {
       setState(() => _error = e.message);
@@ -160,6 +209,32 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                         ? 'E-mail invalide'
                         : null,
                   ),
+                  if (_recentList.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text('Récents :',
+                            style: theme.textTheme.bodySmall),
+                        for (final recent in _recentList)
+                          ActionChip(
+                            avatar:
+                                const Icon(Icons.history, size: 16),
+                            label: Text(
+                              recent.display,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onPressed: _loading
+                                ? null
+                                : () => setState(() =>
+                                    _beneficiaryController.text =
+                                        recent.email),
+                          ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.md),
                   TextFormField(
                     controller: _amountController,
