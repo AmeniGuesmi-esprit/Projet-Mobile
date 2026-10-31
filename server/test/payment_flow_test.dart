@@ -338,7 +338,13 @@ void main() {
       final third =
           await ts.registerLogin(email: 'third@test.fr');
       await ts.call('POST', '/payment-methods',
-          token: p.$1, body: {'type': 'especes'});
+          token: p.$1,
+          body: {
+            'type': 'carte_bancaire',
+            'numero_carte': validCard,
+            'nom_titulaire': 'JOHN DOE',
+            'date_expiration': '10/29',
+          });
       final (_, json) = await ts.call('POST', '/transactions',
           token: p.$1,
           body: {
@@ -347,6 +353,15 @@ void main() {
             'type_service': 'TeleDoc',
           });
       final transactionId = json['id'] as int;
+      expect(json['statut'], 'paye');
+      expect(json['direction'], 'debit');
+      expect(json['moyen_paiement_type'], 'carte_bancaire');
+      expect(
+        json['facture_numero'],
+        'FAC-${DateTime.now().year}-'
+        '${transactionId.toString().padLeft(6, '0')}',
+        reason: 'the invoice number derives from the real row id',
+      );
 
       // Third user cannot see the invoice.
       final (forbid, _) = await ts.call(
@@ -358,6 +373,7 @@ void main() {
           token: p.$1);
       expect(status, 200);
       expect(detail['beneficiaire_nom'], 'John Doe');
+      expect(detail['payeur_nom'], 'John Doe');
       expect(detail['facture_numero'], isNotEmpty);
 
       // List filters by statut/type_service.
@@ -371,6 +387,38 @@ void main() {
               token: p.$1))
           .$1;
       expect(listStatus, 400); // unknown enum value
+    });
+
+    test('beneficiary lists incoming payments with credit direction', () async {
+      final p = await ts.registerLogin(email: 'payer@test.fr', solde: 5000);
+      final pro = await ts.registerLogin(
+          email: 'pro@test.fr', role: 'conducteur', rib: validRib);
+      final third = await ts.registerLogin(email: 'third@test.fr');
+      await ts.call('POST', '/payment-methods',
+          token: p.$1, body: {'type': 'portefeuille'});
+      await ts.call('POST', '/transactions',
+          token: p.$1,
+          body: {
+            'montant_centimes': 700,
+            'beneficiaire_email': 'pro@test.fr',
+            'type_service': 'EcoRoute',
+          });
+
+      // The professional sees the payment they received.
+      final (status, json) =
+          await ts.call('GET', '/transactions', token: pro.$1);
+      expect(status, 200);
+      final items = json['items'] as List;
+      expect(items, hasLength(1));
+      expect(items.first['direction'], 'credit');
+      expect(items.first['payeur_nom'], 'John Doe');
+      expect(items.first['payeur_email'], 'payer@test.fr');
+
+      // An unrelated user sees nothing.
+      final (otherStatus, otherJson) =
+          await ts.call('GET', '/transactions', token: third.$1);
+      expect(otherStatus, 200);
+      expect(otherJson['items'], isEmpty);
     });
 
     test('delete account refused with pending transactions', () async {
@@ -411,10 +459,12 @@ void main() {
           });
       final txId = tx['id'] as int;
 
-      // Client has 50 € settled balance (wallet untouched) but the solde was
-      // only debited for wallet payments; reset for deletion test.
-      await ts._db.db.update('utilisateur', {'solde_centimes': 0},
-          where: 'id = ?', whereArgs: [p.$2]);
+      // Cash is pending until the beneficiary confirms receipt.
+      expect(tx['statut'], 'en_attente');
+      final (confirmStatus, _) = await ts.call(
+          'PATCH', '/transactions/$txId/status',
+          token: pro.$1, body: {'statut': 'paye'});
+      expect(confirmStatus, 200);
 
       final (status, _) = await ts.call('DELETE', '/users/me',
           token: p.$1, body: {'mot_de_passe': 'Proxilife2026!'});
@@ -427,6 +477,160 @@ void main() {
       final (invStatus, _) =
           await ts.call('GET', '/transactions/$txId', token: pro.$1);
       expect(invStatus, 200);
+    });
+
+    group('especes (cash) flow', () {
+      Future<(String, String, int, int, int)> setupCashTx() async {
+        final p = await ts.registerLogin(email: 'payer@test.fr', solde: 1000);
+        final pro = await ts.registerLogin(
+            email: 'pro@test.fr', role: 'conducteur', rib: validRib);
+        await ts.call('POST', '/payment-methods',
+            token: p.$1, body: {'type': 'especes'});
+        final (status, json) = await ts.call('POST', '/transactions',
+            token: p.$1,
+            body: {
+              'montant_centimes': 800,
+              'beneficiaire_email': 'pro@test.fr',
+              'type_service': 'EcoRoute',
+            });
+        expect(status, 201);
+        expect(json['statut'], 'en_attente');
+        expect(json['moyen_paiement_type'], 'especes');
+        return (p.$1, pro.$1, p.$2, pro.$2, json['id'] as int);
+      }
+
+      test('pending cash moves nothing; beneficiary confirms receipt',
+          () async {
+        final (pToken, proToken, payerId, proId, txId) = await setupCashTx();
+        expect(await ts.soldeOf(payerId), 1000);
+        expect(await ts.soldeOf(proId), 0);
+
+        // The payer cannot confirm their own cash payment.
+        final (payerConfirm, _) = await ts.call(
+            'PATCH', '/transactions/$txId/status',
+            token: pToken, body: {'statut': 'paye'});
+        expect(payerConfirm, 403);
+
+        final (confirmStatus, confirmJson) = await ts.call(
+            'PATCH', '/transactions/$txId/status',
+            token: proToken, body: {'statut': 'paye'});
+        expect(confirmStatus, 200);
+        expect(confirmJson['statut'], 'paye');
+        expect(confirmJson['direction'], 'credit');
+
+        // Still no internal movement: cash was settled physically.
+        expect(await ts.soldeOf(payerId), 1000);
+        expect(await ts.soldeOf(proId), 0);
+
+        // Confirming twice is refused.
+        final (again, _) = await ts.call(
+            'PATCH', '/transactions/$txId/status',
+            token: proToken, body: {'statut': 'paye'});
+        expect(again, 409);
+      });
+
+      test('payer cancels a pending cash transaction (deleted)', () async {
+        final (pToken, proToken, _, _, txId) = await setupCashTx();
+
+        // The beneficiary cannot cancel it.
+        final (benefCancel, _) = await ts.call(
+            'DELETE', '/transactions/$txId',
+            token: proToken);
+        expect(benefCancel, 403);
+
+        final (deleteStatus, _) = await ts.call(
+            'DELETE', '/transactions/$txId',
+            token: pToken);
+        expect(deleteStatus, 204);
+        final (getStatus, _) = await ts.call(
+            'GET', '/transactions/$txId',
+            token: pToken);
+        expect(getStatus, 404);
+      });
+
+      test('account deletion is blocked while a cash payment is pending',
+          () async {
+        final (pToken, _, _, _, _) = await setupCashTx();
+        final (status, body) =
+            await ts.call('DELETE', '/users/me', token: pToken);
+        expect(status, 409);
+        expect(body['error'], contains('en attente'));
+      });
+
+      test('cash refund only changes the status (no internal movement)',
+          () async {
+        final (pToken, proToken, payerId, proId, txId) = await setupCashTx();
+        final (confirmStatus, _) = await ts.call(
+            'PATCH', '/transactions/$txId/status',
+            token: proToken, body: {'statut': 'paye'});
+        expect(confirmStatus, 200);
+
+        final (refundStatus, refundJson) = await ts.call(
+            'PATCH', '/transactions/$txId/status',
+            token: pToken, body: {'statut': 'rembourse'});
+        expect(refundStatus, 200);
+        expect(refundJson['statut'], 'rembourse');
+        expect(await ts.soldeOf(payerId), 1000);
+        expect(await ts.soldeOf(proId), 0);
+      });
+    });
+
+    test('card refund debits only the beneficiary (bank reversal simulated)',
+        () async {
+      final p = await ts.registerLogin(email: 'payer@test.fr', solde: 5000);
+      final pro = await ts.registerLogin(
+          email: 'pro@test.fr', role: 'conducteur', rib: validRib);
+      await ts.call('POST', '/payment-methods',
+          token: p.$1,
+          body: {
+            'type': 'carte_bancaire',
+            'numero_carte': validCard,
+            'nom_titulaire': 'JOHN DOE',
+            'date_expiration': '10/29',
+          });
+      final (status, json) = await ts.call('POST', '/transactions',
+          token: p.$1,
+          body: {
+            'montant_centimes': 2000,
+            'beneficiaire_email': 'pro@test.fr',
+            'type_service': 'CoachProche',
+          });
+      expect(status, 201);
+      expect(json['statut'], 'paye');
+      // Card charge is external: payer wallet untouched, pro credited.
+      expect(await ts.soldeOf(p.$2), 5000);
+      expect(await ts.soldeOf(pro.$2), 2000);
+
+      final (refundStatus, refundJson) = await ts.call(
+          'PATCH', '/transactions/${json['id']}/status',
+          token: p.$1, body: {'statut': 'rembourse'});
+      expect(refundStatus, 200);
+      expect(refundJson['statut'], 'rembourse');
+      // The payer is NOT credited internally (reimbursed on their card).
+      expect(await ts.soldeOf(p.$2), 5000);
+      expect(await ts.soldeOf(pro.$2), 0);
+    });
+
+    test('two quick wallet payments keep exact balances', () async {
+      final p = await ts.registerLogin(email: 'payer@test.fr', solde: 1000);
+      final pro = await ts.registerLogin(
+          email: 'pro@test.fr', role: 'conducteur', rib: validRib);
+      await ts.call('POST', '/payment-methods',
+          token: p.$1, body: {'type': 'portefeuille'});
+      for (var i = 0; i < 2; i++) {
+        final (status, json) = await ts.call('POST', '/transactions',
+            token: p.$1,
+            body: {
+              'montant_centimes': 300,
+              'beneficiaire_email': 'pro@test.fr',
+              'type_service': 'EcoRoute',
+            });
+        expect(status, 201);
+        expect(json['statut'], 'paye');
+        expect(json['facture_numero'], matches(r'^FAC-\d{4}-\d{6}$'));
+      }
+      expect(await ts.soldeOf(p.$2), 400);
+      expect(await ts.soldeOf(pro.$2), 600);
     });
   });
 }

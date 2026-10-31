@@ -81,6 +81,26 @@ class UserRepository {
         whereArgs: [id],
       );
 
+  /// Atomically adjusts the balance by [delta] cents (negative to debit).
+  /// Accepts a [DatabaseExecutor] so callers inside a `db.transaction` use
+  /// the transaction handle (using the outer handle would deadlock sqflite).
+  Future<void> addSolde(DatabaseExecutor exec, int id, int delta) =>
+      exec.rawUpdate(
+        'UPDATE utilisateur SET solde_centimes = solde_centimes + ? '
+        'WHERE id = ?',
+        [delta, id],
+      );
+
+  Future<int> soldeOfId(DatabaseExecutor exec, int id) async {
+    final rows = await exec.query(
+      'utilisateur',
+      columns: ['solde_centimes'],
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    return rows.first['solde_centimes'] as int;
+  }
+
   int soldeOf(Map<String, Object?> row) => row['solde_centimes'] as int;
 
   /// Deletes the account after anonymising its transactions. Related rows in

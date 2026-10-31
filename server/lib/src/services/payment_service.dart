@@ -8,12 +8,21 @@ import '../repositories/user_repository.dart';
 
 /// Business rules for payment methods and internal transactions.
 ///
-/// Semantics per payment method type:
-/// - carte_bancaire / especes : simulated, immediate success (`paye`).
-/// - portefeuille : debits the payer's internal wallet; insufficient balance
-///   yields a `echoue` transaction.
-/// On any `paye` transaction the beneficiary's wallet is credited (they would
-/// later cash out to their RIB).
+/// Money semantics per payment method type (single source of truth):
+/// - carte_bancaire : simulated bank charge, immediately `paye`; the
+///   beneficiary's internal wallet is credited.
+/// - portefeuille : debits the payer's internal wallet, credited to the
+///   beneficiary; insufficient balance yields an `echoue` record with no
+///   money moved. The balance is re-checked **inside** the SQL transaction.
+/// - especes : cash physically changes hands, so the transaction is created
+///   `en_attente` with **no internal movement**. The beneficiary confirms
+///   receipt (`en_attente -> paye`); the payer may cancel while pending.
+///
+/// Refunds mirror the original method:
+/// - portefeuille : symmetric reversal (beneficiary debited, payer credited).
+/// - carte_bancaire : the bank reverses the charge, so only the beneficiary
+///   is debited internally; the payer is reimbursed "on their card".
+/// - especes : status change only — cash is handed back physically.
 class PaymentService {
   PaymentService({
     required Database db,
@@ -26,6 +35,8 @@ class PaymentService {
   final UserRepository users;
   final PaymentMethodRepository methods;
   final TransactionRepository transactions;
+
+  int _tmpFactureCounter = 0;
 
   // -------------------------------------------------------------------------
   // Payment methods CRUD
@@ -132,7 +143,7 @@ class PaymentService {
       statut: statut,
       service: service,
     );
-    return rows.map(transactions.toDto).toList();
+    return rows.map((r) => transactions.toDto(r, forUserId: utilisateurId)).toList();
   }
 
   Future<TransactionDto> createTransaction(
@@ -204,40 +215,39 @@ class PaymentService {
 
     final methodType =
         PaymentMethodType.parse(methodRow['type'] as String);
-    final payerSolde = users.soldeOf(payer);
-    final walletSufficient =
-        payerSolde - montantCentimes >= 0;
-
+    final beneficiaireId = beneficiaire['id'] as int;
     final useWallet = methodType == PaymentMethodType.portefeuille;
-    final finalStatus = !useWallet
-        ? TransactionStatus.paye
-        : (walletSufficient ? TransactionStatus.paye : TransactionStatus.echoue);
+    final isCash = methodType == PaymentMethodType.especes;
 
     late int transactionId;
     await _db.transaction((txn) async {
-      // facture_numero derives from the next AUTOINCREMENT id, computed
-      // inside the transaction (ids are never reused).
-      final nextId = ((await txn.rawQuery(
-                'SELECT COALESCE(MAX(id), 0) + 1 AS n FROM transaction_',
-              ))
-                  .first['n'] as int)
-          .clamp(1, 1 << 62);
-      final year = DateTime.now().year;
-      final factureNumero =
-          'FAC-$year-${nextId.toString().padLeft(6, '0')}';
+      // Cash waits for the beneficiary's confirmation; the wallet balance is
+      // re-checked inside the transaction so concurrent payments can't
+      // overdraw it.
+      TransactionStatus finalStatus;
+      if (isCash) {
+        finalStatus = TransactionStatus.enAttente;
+      } else if (useWallet) {
+        final solde = await users.soldeOfId(txn, payerId);
+        finalStatus = solde >= montantCentimes
+            ? TransactionStatus.paye
+            : TransactionStatus.echoue;
+      } else {
+        finalStatus = TransactionStatus.paye;
+      }
 
       if (finalStatus == TransactionStatus.paye) {
         if (useWallet) {
-          await txn.update('utilisateur',
-              {'solde_centimes': payerSolde - montantCentimes},
-              where: 'id = ?', whereArgs: [payerId]);
+          await users.addSolde(txn, payerId, -montantCentimes);
         }
-        final benefSolde =
-            users.soldeOf(beneficiaire);
-        await txn.update('utilisateur',
-            {'solde_centimes': benefSolde + montantCentimes},
-            where: 'id = ?', whereArgs: [beneficiaire['id'] as int]);
+        await users.addSolde(txn, beneficiaireId, montantCentimes);
       }
+
+      // Temporary unique invoice number; replaced with the canonical
+      // FAC-<year>-<real id> right below, inside the same transaction.
+      final tmpFacture =
+          'TMP-${DateTime.now().year}-${++_tmpFactureCounter}-'
+          '${DateTime.now().microsecondsSinceEpoch}';
       transactionId = await txn.insert('transaction_', {
         'montant_centimes': montantCentimes,
         'devise': 'TND',
@@ -247,15 +257,23 @@ class PaymentService {
         'id_reference': idReference?.trim().isEmpty ?? true
             ? null
             : idReference!.trim(),
-        'facture_numero': factureNumero,
+        'facture_numero': tmpFacture,
         'utilisateur_id': payerId,
-        'beneficiaire_id': beneficiaire['id'] as int,
+        'beneficiaire_id': beneficiaireId,
         'moyen_paiement_id': methodRow!['id'] as int,
       });
+      final factureNumero = 'FAC-${DateTime.now().year}-'
+          '${transactionId.toString().padLeft(6, '0')}';
+      await txn.update(
+        'transaction_',
+        {'facture_numero': factureNumero},
+        where: 'id = ?',
+        whereArgs: [transactionId],
+      );
     });
 
     final row = await transactions.findById(transactionId);
-    return transactions.toDto(row!);
+    return transactions.toDto(row!, forUserId: payerId);
   }
 
   Future<TransactionDto> getTransaction(
@@ -268,12 +286,32 @@ class PaymentService {
         beneficiaireId == requesterId ||
         requesterRole == UserRole.admin;
     if (!canSee) throw ApiError.forbidden('Accès refusé');
-    return transactions.toDto(row);
+    return transactions.toDto(row, forUserId: requesterId);
   }
 
-  /// paye → rembourse. Initiated by the payer (or an admin). The payer's
-  /// wallet is credited back, the beneficiary is debited (rejected if their
-  /// balance can't cover it).
+  /// enAttente → paye. Only the beneficiary (or an admin) confirms, and only
+  /// cash transactions ever wait: nothing internal moves at confirmation,
+  /// the cash was settled physically.
+  Future<TransactionDto> confirm(
+      int id, int requesterId, UserRole requesterRole) async {
+    final row = await transactions.findById(id);
+    if (row == null) throw ApiError.notFound('Transaction introuvable');
+    final beneficiaireId = row['beneficiaire_id'] as int?;
+    if (beneficiaireId != requesterId && requesterRole != UserRole.admin) {
+      throw ApiError.forbidden(
+          'Seul le bénéficiaire peut confirmer la réception');
+    }
+    final statut = TransactionStatus.parse(row['statut'] as String);
+    if (!TransactionRules.canTransition(statut, TransactionStatus.paye)) {
+      throw ApiError.conflict(
+          'Seule une transaction en attente peut être confirmée');
+    }
+    await transactions.updateStatus(id, TransactionStatus.paye);
+    return getTransaction(id, requesterId, requesterRole);
+  }
+
+  /// paye → rembourse. Initiated by the payer (or an admin). Money moves
+  /// according to the original method (see class doc).
   Future<TransactionDto> refund(
       int id, int requesterId, UserRole requesterRole) async {
     final row = await transactions.findById(id);
@@ -295,23 +333,29 @@ class PaymentService {
       throw ApiError.conflict(
           'Transaction anonymisée : remboursement impossible');
     }
-    final payer = (await users.findById(payerId))!;
-    final beneficiaire = (await users.findById(beneficiaireId))!;
-    final benefSolde = users.soldeOf(beneficiaire);
-    if (benefSolde < amount) {
-      throw ApiError.conflict(
-          'Solde du bénéficiaire insuffisant pour le remboursement');
-    }
+    final methodType = row['mp_type'] == null
+        ? null
+        : PaymentMethodType.parse(row['mp_type'] as String);
 
     // All statements go through the transaction object: using the outer
     // database handle inside an open transaction deadlocks sqflite.
     await _db.transaction((txn) async {
-      await txn.update('utilisateur',
-          {'solde_centimes': benefSolde - amount},
-          where: 'id = ?', whereArgs: [beneficiaireId]);
-      await txn.update('utilisateur',
-          {'solde_centimes': users.soldeOf(payer) + amount},
-          where: 'id = ?', whereArgs: [payerId]);
+      if (methodType == PaymentMethodType.portefeuille ||
+          methodType == PaymentMethodType.carteBancaire) {
+        final benefSolde = await users.soldeOfId(txn, beneficiaireId);
+        if (benefSolde < amount) {
+          throw ApiError.conflict(
+              'Solde du bénéficiaire insuffisant pour le remboursement');
+        }
+        await users.addSolde(txn, beneficiaireId, -amount);
+        if (methodType == PaymentMethodType.portefeuille) {
+          // Wallet refund: exact reversal. Card refund: the payer is
+          // reimbursed by the (simulated) bank on their card, so no
+          // internal credit happens here.
+          await users.addSolde(txn, payerId, amount);
+        }
+      }
+      // Cash: nothing internal ever moved — status change only.
       await txn.update('transaction_',
           {'statut': TransactionStatus.rembourse.apiValue},
           where: 'id = ?', whereArgs: [id]);
@@ -320,7 +364,7 @@ class PaymentService {
     return getTransaction(id, requesterId, requesterRole);
   }
 
-  /// Cancels a pending transaction (payer or admin only).
+  /// Cancels (deletes) a pending transaction (payer or admin only).
   Future<void> cancel(
       int id, int requesterId, UserRole requesterRole) async {
     final row = await transactions.findById(id);
