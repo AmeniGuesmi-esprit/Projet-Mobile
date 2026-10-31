@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:mailer/mailer.dart';
@@ -67,11 +68,50 @@ class SmtpEmailSender implements EmailSender {
   }
 }
 
+/// SMTP mode: always echoes the code in the server terminal first (dev
+/// fallback), then attempts real delivery. A delivery failure is logged but
+/// never propagated — registration must not fail because Gmail is
+/// unreachable or the credentials expired.
+class ResilientEmailSender implements EmailSender {
+  ResilientEmailSender({required EmailSender primary, required EmailSender fallback})
+      : _primary = primary,
+        _fallback = fallback;
+
+  final EmailSender _primary;
+  final EmailSender _fallback;
+
+  @override
+  Future<void> sendVerificationCode({
+    required String to,
+    required String prenom,
+    required String code,
+  }) async {
+    await _fallback.sendVerificationCode(to: to, prenom: prenom, code: code);
+    try {
+      await _primary.sendVerificationCode(to: to, prenom: prenom, code: code);
+      stdout.writeln('└─ SMTP : e-mail réellement envoyé à $to');
+      developer.log('E-mail de vérification envoyé à $to',
+          name: 'proxilife.email');
+    } on Object catch (e) {
+      stdout.writeln(
+          '└─ SMTP : ÉCHEC d\'envoi à $to — utilisez le code ci-dessus ($e)');
+      developer.log(
+        'Échec d’envoi SMTP à $to : $e',
+        name: 'proxilife.email',
+        level: 900,
+      );
+    }
+  }
+}
+
 EmailSender createEmailSender(ServerConfig config) {
   if (!config.emailConsoleMode &&
       config.smtpUser.isNotEmpty &&
       config.smtpPass.isNotEmpty) {
-    return SmtpEmailSender(config);
+    return ResilientEmailSender(
+      primary: SmtpEmailSender(config),
+      fallback: ConsoleEmailSender(),
+    );
   }
   return ConsoleEmailSender();
 }
