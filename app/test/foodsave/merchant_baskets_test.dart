@@ -429,6 +429,56 @@ void main() {
       expect(find.text('Ameni G.'), findsOneWidget);
     });
 
+    testWidgets('payment to collect: « Payer » validates payment and pickup',
+        (tester) async {
+      final server = _Server((request) async {
+        if (request.url.path == '/foodsave/merchant/scan') {
+          return _json({
+            'resultat': 'paiement_requis',
+            'message': 'Le client a été remboursé : demandez-lui de payer '
+                '10,000 DT, puis touchez « Payer » pour valider.',
+            'reservation': reservationJson(statut: 'en_attente'),
+          });
+        }
+        expect(request.url.path, '/foodsave/merchant/scan/pay');
+        return _json({
+          'resultat': 'accepte',
+          'message': 'Paiement de 10,000 DT validé : remettez 2 × Panier du '
+              'soir à Ameni G.',
+          'reservation': reservationJson(),
+        });
+      });
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.5;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(_app(ScanScreen(
+        session: makeTestSession(api: server.api),
+        scannerBuilder: (context, onCode) =>
+            const ColoredBox(color: Colors.black),
+      )));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Saisir le code'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+          find.byKey(const ValueKey('manual-code-field')), 'FS1.42.abc.def');
+      await tester.tap(find.text('Valider le retrait'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Paiement à encaisser'), findsOneWidget);
+      expect(find.text('À encaisser'), findsOneWidget);
+      final pay = find.byKey(const ValueKey('scan-pay'));
+      expect(pay, findsOneWidget);
+      await tester.tap(pay);
+      await tester.pumpAndSettle();
+
+      expect(server.requests.map((r) => r.url.path),
+          ['/foodsave/merchant/scan', '/foodsave/merchant/scan/pay']);
+      expect(jsonDecode(server.requests.last.body)['token'], 'FS1.42.abc.def');
+      expect(find.text('Retrait validé'), findsOneWidget);
+      expect(find.byKey(const ValueKey('scan-pay')), findsNothing);
+    });
+
     testWidgets('same scanned code is ignored within 3 seconds',
         (tester) async {
       final server = _Server((_) async => _json({

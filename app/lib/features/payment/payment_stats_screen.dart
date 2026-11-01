@@ -9,6 +9,7 @@ import '../../core/widgets/money_text.dart';
 import '../../core/widgets/service_badge.dart';
 import 'payment_api.dart';
 import 'payment_stats.dart';
+import '../../core/live/live_refresh.dart';
 
 /// Spending insights: totals, per-service split and the last 7 days.
 /// Everything is computed client-side from the transaction history.
@@ -21,7 +22,8 @@ class PaymentStatsScreen extends StatefulWidget {
   State<PaymentStatsScreen> createState() => _PaymentStatsScreenState();
 }
 
-class _PaymentStatsScreenState extends State<PaymentStatsScreen> {
+class _PaymentStatsScreenState extends State<PaymentStatsScreen>
+    with LiveRefresh<PaymentStatsScreen> {
   late final PaymentApi _payments = PaymentApi(widget.api);
   late Future<List<TransactionDto>> _future;
 
@@ -34,6 +36,15 @@ class _PaymentStatsScreenState extends State<PaymentStatsScreen> {
   void _reload() {
     setState(() {
       _future = _payments.listTransactions();
+    });
+  }
+
+  @override
+  Future<void> liveRefresh() async {
+    final items = await _payments.listTransactions();
+    if (!mounted) return;
+    setState(() {
+      _future = liveFuture(items);
     });
   }
 

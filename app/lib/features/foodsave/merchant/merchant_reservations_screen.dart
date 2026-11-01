@@ -10,6 +10,7 @@ import '../widgets/foodsave_ui.dart';
 import 'scan_screen.dart';
 import 'widgets/merchant_reservation_tile.dart';
 import 'widgets/status_filter_bar.dart';
+import '../../../core/live/live_refresh.dart';
 
 /// Reservations received by the merchant (all, or one basket's), filterable
 /// by status, with live expiry countdowns for the active ones.
@@ -26,7 +27,8 @@ class MerchantReservationsScreen extends StatefulWidget {
 }
 
 class _MerchantReservationsScreenState
-    extends State<MerchantReservationsScreen> {
+    extends State<MerchantReservationsScreen>
+    with LiveRefresh<MerchantReservationsScreen> {
   late final FoodSaveApi _api = FoodSaveApi(widget.session.api);
   late Future<List<ReservationDto>> _future = _load();
   ReservationStatus? _filter;
@@ -42,9 +44,20 @@ class _MerchantReservationsScreenState
   Future<List<ReservationDto>> _load() =>
       _api.merchantReservations(panierId: widget.basketId);
 
+  @override
+  Future<void> liveRefresh() async {
+    final items = await _load();
+    if (!mounted) return;
+    setState(() {
+      _future = liveFuture(items);
+    });
+  }
+
   Future<void> _refresh() {
     final future = _load();
-    setState(() => _future = future);
+    setState(() {
+      _future = future;
+    });
     return future.then((_) {}, onError: (_) {});
   }
 

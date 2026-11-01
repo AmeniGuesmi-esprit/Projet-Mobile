@@ -227,6 +227,61 @@ void main() {
       expect((await get('lat=36.8&lng=10.18', auth: false)).$1, 401);
     });
 
+    test('deletes only the caller\'s own selected notifications',
+        () async {
+      final db = database.db;
+      Future<int> add(int userId, String key) =>
+          db.insert('foodsave_notification', {
+            'utilisateur_id': userId,
+            'type': 'nouveau_panier',
+            'titre': 'Nouveau panier',
+            'message': 'Test',
+            'cle_evenement': key,
+            'lu': 0,
+            'cree_le': DateTime.now().toUtc().toIso8601String(),
+          });
+      final me = (await db.query('utilisateur', limit: 1)).single['id'] as int;
+      final other = await db.insert('utilisateur', {
+        'nom': 'Autre',
+        'prenom': 'Client',
+        'email': 'autre@test.fr',
+        'telephone': '0611111111',
+        'mot_de_passe_hash': 'x',
+        'role': 'client',
+        'statut_compte': 'actif',
+        'solde_centimes': 0,
+        'cree_le': DateTime.now().toIso8601String(),
+      });
+      final a = await add(me, 'a');
+      final b = await add(me, 'b');
+      final c = await add(me, 'c');
+      final theirs = await add(other, 'd');
+
+      Future<(int, Map<String, dynamic>)> delete(Object ids) async {
+        final response = await handler(Request(
+            'POST', Uri.parse('http://test/foodsave/notifications/delete'),
+            body: jsonEncode({'ids': ids}),
+            headers: {
+              'authorization': 'Bearer $token',
+              'content-type': 'application/json',
+            }));
+        return (
+          response.statusCode,
+          jsonDecode(await response.readAsString()) as Map<String, dynamic>,
+        );
+      }
+
+      final (status, body) = await delete([a, c, theirs]);
+      expect(status, 200);
+      expect(body['supprimees'], 2);
+      final left = (await db.query('foodsave_notification'))
+          .map((r) => r['id'])
+          .toSet();
+      expect(left, {b, theirs});
+      expect((await delete(<int>[])).$1, 400);
+      expect((await delete(['x'])).$1, 400);
+    });
+
     const trip = 'from_lat=36.8064&from_lng=10.1814&to_lat=36.7751&to_lng=10.1718';
 
     test('route by car (default) and on foot', () async {

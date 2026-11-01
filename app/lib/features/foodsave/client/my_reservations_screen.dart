@@ -12,6 +12,7 @@ import '../widgets/foodsave_ui.dart';
 import 'booking/booking_format.dart';
 import 'booking/reservation_card.dart';
 import 'reservation_qr_screen.dart';
+import '../../../core/live/live_refresh.dart';
 
 /// The client's FoodSave reservations: "En cours" (to pick up) and
 /// "Historique" (picked up, expired, cancelled).
@@ -31,7 +32,8 @@ class MyReservationsScreen extends StatefulWidget {
   State<MyReservationsScreen> createState() => _MyReservationsScreenState();
 }
 
-class _MyReservationsScreenState extends State<MyReservationsScreen> {
+class _MyReservationsScreenState extends State<MyReservationsScreen>
+    with LiveRefresh<MyReservationsScreen> {
   late final FoodSaveApi _api = FoodSaveApi(widget.session.api);
   late final ValueNotifier<DateTime> _now = ValueNotifier(widget.clock());
   late Future<List<ReservationDto>> _future;
@@ -62,12 +64,23 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
 
   Future<void> _reload() async {
     final future = _fetch();
-    setState(() => _future = future);
+    setState(() {
+      _future = future;
+    });
     try {
       await future;
     } catch (_) {
       // Displayed by the FutureBuilder.
     }
+  }
+
+  @override
+  Future<void> liveRefresh() async {
+    final items = await _fetch();
+    if (!mounted) return;
+    setState(() {
+      _future = liveFuture(items);
+    });
   }
 
   void _tick() {

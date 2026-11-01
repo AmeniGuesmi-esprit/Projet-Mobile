@@ -209,6 +209,10 @@ class _Harness {
   Future<(int, Map<String, dynamic>)> scan(_User merchant, String token) =>
       call('POST', '/foodsave/merchant/scan',
           token: merchant.token, body: {'token': token});
+
+  Future<(int, Map<String, dynamic>)> scanPay(_User merchant, String token) =>
+      call('POST', '/foodsave/merchant/scan/pay',
+          token: merchant.token, body: {'token': token});
 }
 
 void main() {
@@ -312,28 +316,22 @@ void main() {
           _Harness.now.add(const Duration(minutes: 15)));
     });
 
-    test('closes "reservation duration" before the end of pickup',
+    test('less time left than the duration: reservable, QR until the end',
         () async {
-      // Pickup ends in 20 min; reservation duration 15 min → open until
-      // end - 15 min, i.e. 5 more minutes.
+      // Pickup ends in 20 min; reservation duration 15 min. Reserved 10 min
+      // before the end → the QR is valid for those 10 min only.
       final late = await h.basket(merchant.id,
           start: const Duration(hours: -1),
           end: const Duration(minutes: 20));
       await h.database.db.update(
           'panier', {'duree_reservation_minutes': 15},
           where: 'id = ?', whereArgs: [late]);
-      _Harness.now = _Harness.now.add(const Duration(minutes: 5));
-      var (status, body) =
-          await h.reserve(client, late, quantite: 1, methodId: methodId);
-      expect(status, 409, reason: '$body');
-      expect(body['error'], contains('Réservations closes'));
-      expect((await h.basketRow(late))['quantite'], 3);
-
-      // One minute earlier it was still possible.
-      _Harness.now = _Harness.now.subtract(const Duration(minutes: 1));
-      (status, body) =
+      final end = _Harness.now.add(const Duration(minutes: 20));
+      _Harness.now = _Harness.now.add(const Duration(minutes: 10));
+      final (status, body) =
           await h.reserve(client, late, quantite: 1, methodId: methodId);
       expect(status, 201, reason: '$body');
+      expect(ReservationDto.fromJson(body).dateExpirationQr, end);
     });
 
     test('quantity above stock → 409 and nothing changes', () async {
@@ -375,7 +373,7 @@ void main() {
           end: const Duration(minutes: 4));
       final (status, body) = await h.reserve(client, closing, methodId: methodId);
       expect(status, 409);
-      expect(body['error'], contains('Réservations closes'));
+      expect(body['error'], contains('moins de 5 minutes'));
     });
 
     test('insufficient wallet → 402, annule, units restored exactly once',
@@ -457,7 +455,8 @@ void main() {
       final result = ScanResultDto.fromJson(body);
       expect(result.resultat, ScanOutcome.accepte);
       expect(result.message,
-          'Retrait validé : remettez 2 × Panier du soir à Ameni G.');
+          'Panier payé par portefeuille : remettez 2 × Panier du soir à '
+          'Ameni G.');
       expect(result.reservation?.qrToken, isNull);
       expect(result.reservation?.statut, ReservationStatus.retire);
 
@@ -660,13 +659,85 @@ void main() {
       await h.service.expireDue();
       expect((await h.reservationRow(dto.id))['statut'], 'en_attente');
 
-      // Pickup: the merchant has the cash → transaction confirmed.
+      // Scan: the cash must be collected first — nothing changes yet.
       final (scanStatus, scan) = await h.scan(merchant, dto.qrToken!);
       expect(scanStatus, 200);
-      expect(ScanResultDto.fromJson(scan).resultat, ScanOutcome.accepte);
+      final required = ScanResultDto.fromJson(scan);
+      expect(required.resultat, ScanOutcome.paiementRequis);
+      expect(required.message, contains('encaissez 10,000 DT'));
+      expect((await h.reservationRow(dto.id))['statut'], 'en_attente');
+      expect(await txStatus(dto.transactionId), 'en_attente');
+
+      // « Payer »: cash confirmed, then pickup validated.
+      final (payStatus, paid) = await h.scanPay(merchant, dto.qrToken!);
+      expect(payStatus, 200, reason: '$paid');
+      final done = ScanResultDto.fromJson(paid);
+      expect(done.resultat, ScanOutcome.accepte);
+      expect(done.message, contains('Paiement de 10,000 DT validé'));
+      expect((await h.reservationRow(dto.id))['statut'], 'retire');
       expect((await h.reservationRow(dto.id))['statut_paiement'], 'paye');
       expect(await txStatus(dto.transactionId), 'paye');
       expect(await h.soldeOf(merchant.id), 0); // cash is in hand
+    });
+
+    test('card paid: accepted at once; refunded before pickup: pay again',
+        () async {
+      final card = await h.method(client.id,
+          type: PaymentMethodType.portefeuille);
+      var (status, body) =
+          await h.reserve(client, basketId, quantite: 1, methodId: card);
+      final paid = ReservationDto.fromJson(body);
+      (status, body) =
+          await h.reserve(client, basketId, quantite: 1, methodId: card);
+      final refunded = ReservationDto.fromJson(body);
+
+      // Paid reservation → accepted directly.
+      (status, body) = await h.scan(merchant, paid.qrToken!);
+      final ok = ScanResultDto.fromJson(body);
+      expect(ok.resultat, ScanOutcome.accepte);
+      expect(ok.message, contains('Panier payé par portefeuille'));
+
+      // Picked up: the client can no longer refund that payment.
+      var (txCode, tx) = await h.call(
+          'GET', '/transactions/${paid.transactionId}',
+          token: client.token);
+      expect(txCode, 200);
+      expect(tx['remboursable'], isFalse);
+      final (refundCode, refundBody) = await h.call(
+          'PATCH', '/transactions/${paid.transactionId}/status',
+          token: client.token, body: {'statut': 'rembourse'});
+      expect(refundCode, 409);
+      expect(refundBody['error'], contains('Panier déjà retiré'));
+      // Not picked up yet: still refundable.
+      (txCode, tx) = await h.call(
+          'GET', '/transactions/${refunded.transactionId}',
+          token: client.token);
+      expect(tx['remboursable'], isTrue);
+
+      // The client refunds the second payment from « Paiements ».
+      await h.payments.refund(
+          refunded.transactionId!, client.id, UserRole.client);
+      final (_, mine) = await h.call(
+          'GET', '/foodsave/reservations/${refunded.id}',
+          token: client.token);
+      expect(mine['statut_paiement'], 'rembourse'); // live status
+
+      (status, body) = await h.scan(merchant, refunded.qrToken!);
+      final required = ScanResultDto.fromJson(body);
+      expect(required.resultat, ScanOutcome.paiementRequis);
+      expect(required.message, contains('remboursé'));
+      expect((await h.reservationRow(refunded.id))['statut'], 'en_attente');
+
+      (status, body) = await h.scanPay(merchant, refunded.qrToken!);
+      expect(status, 200, reason: '$body');
+      expect(ScanResultDto.fromJson(body).resultat, ScanOutcome.accepte);
+      final row = await h.reservationRow(refunded.id);
+      expect(row['statut'], 'retire');
+      expect(row['statut_paiement'], 'paye');
+      expect(row['mode_paiement'], 'especes');
+      expect(row['transaction_id'], isNot(refunded.transactionId));
+      expect(await txStatus(row['transaction_id'] as int), 'paye');
+      expect(await txStatus(refunded.transactionId), 'rembourse');
     });
 
     test('cancelled or expired: the cash order is dropped, no refund',

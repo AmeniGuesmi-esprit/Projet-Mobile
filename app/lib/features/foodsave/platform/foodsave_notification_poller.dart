@@ -15,7 +15,8 @@ class FoodSaveNotificationPoller with WidgetsBindingObserver {
   FoodSaveNotificationPoller._();
   static final FoodSaveNotificationPoller instance = FoodSaveNotificationPoller._();
 
-  static const Duration interval = Duration(seconds: 30);
+  /// Same pace as the live screens (badge + system notifications).
+  static const Duration interval = Duration(seconds: 10);
 
   /// On the first poll after [start], only notifications this recent are
   /// shown as system notifications (older unread ones just feed the badge).

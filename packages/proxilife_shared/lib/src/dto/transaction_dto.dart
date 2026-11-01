@@ -1,4 +1,5 @@
 import '../enums.dart';
+import '../transaction_rules.dart';
 
 /// Direction of a transaction relative to the requesting user.
 enum TransactionDirection {
@@ -22,7 +23,7 @@ enum TransactionDirection {
 
 /// A transaction as seen by the client. Amounts are whole cents.
 class TransactionDto {
-  const TransactionDto({
+  TransactionDto({
     required this.id,
     required this.montantCentimes,
     required this.devise,
@@ -38,7 +39,9 @@ class TransactionDto {
     this.beneficiaireEmail,
     this.payeurNom,
     this.payeurEmail,
-  });
+    bool? remboursable,
+  }) : remboursable =
+            remboursable ?? TransactionRules.canRefund(statut);
 
   final int id;
   final int montantCentimes;
@@ -61,6 +64,10 @@ class TransactionDto {
   final String? payeurNom;
   final String? payeurEmail;
 
+  /// The payer may still ask for a refund: paid, and the service was not
+  /// consumed yet (e.g. a FoodSave basket already picked up → false).
+  final bool remboursable;
+
   factory TransactionDto.fromJson(Map<String, dynamic> json) => TransactionDto(
         id: json['id'] as int,
         montantCentimes: json['montant_centimes'] as int,
@@ -79,6 +86,7 @@ class TransactionDto {
         beneficiaireEmail: json['beneficiaire_email'] as String?,
         payeurNom: json['payeur_nom'] as String?,
         payeurEmail: json['payeur_email'] as String?,
+        remboursable: json['remboursable'] as bool?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -97,5 +105,6 @@ class TransactionDto {
         'beneficiaire_email': beneficiaireEmail,
         'payeur_nom': payeurNom,
         'payeur_email': payeurEmail,
+        'remboursable': remboursable,
       };
 }

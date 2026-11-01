@@ -104,23 +104,36 @@ String? unavailableReason(BasketDto basket, {DateTime? now, int? viewerId}) {
     pickupEnd: basket.creneauRetraitFin,
     basketExpiry: basket.dateExpiration,
     now: n,
-    reservationMinutes: basket.dureeReservationMinutes,
   );
   if (!ok) {
     if (!n.isBefore(basket.creneauRetraitFin)) {
       return 'Le retrait est terminé : ce panier ne peut plus être réservé.';
     }
-    return 'Réservations closes depuis ${clockFr(reservationDeadlineOf(basket))} : '
-        'ce panier expire à ${clockFr(basket.creneauRetraitFin)} et la durée '
-        'de réservation est de ${basket.dureeReservationMinutes} min.';
+    return 'Trop tard pour réserver : ce panier expire à '
+        '${clockFr(basket.creneauRetraitFin)} (moins de '
+        '${foodSaveMinPickupLead.inMinutes} min).';
   }
   return null;
 }
 
-/// Last moment [basket] can be reserved (end of pickup - reservation
-/// duration).
-DateTime reservationDeadlineOf(BasketDto basket) =>
-    FoodSaveRules.reservationDeadline(
+/// When a reservation made at [now] must be picked up: the basket's
+/// reservation duration, shortened when the basket expires sooner.
+DateTime pickupLimitIfReservedNow(BasketDto basket, DateTime now) =>
+    FoodSaveRules.qrExpiry(
+      now: now.toUtc(),
+      pickupStart: basket.creneauRetraitDebut,
       pickupEnd: basket.creneauRetraitFin,
-      reservationMinutes: basket.dureeReservationMinutes,
+      ttl: Duration(minutes: basket.dureeReservationMinutes),
     );
+
+/// Hint under the "Réserver" button.
+String pickupHintFr(BasketDto basket, DateTime now) {
+  final limit = pickupLimitIfReservedNow(basket, now);
+  final shortened = !limit.isBefore(basket.creneauRetraitFin) &&
+      basket.creneauRetraitFin.difference(now.toUtc()) <
+          Duration(minutes: basket.dureeReservationMinutes);
+  return shortened
+      ? 'Expire bientôt : à retirer avant ${clockFr(limit)}'
+      : 'À retirer dans les ${basket.dureeReservationMinutes} min '
+          'suivant la réservation';
+}

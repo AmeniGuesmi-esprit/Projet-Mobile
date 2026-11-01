@@ -17,6 +17,7 @@ import 'basket_map_view.dart';
 import 'route_screen.dart';
 import 'my_reservations_screen.dart';
 import 'widgets/client_basket_card.dart';
+import '../../../core/live/live_refresh.dart';
 
 /// Quick filters of the client list (first one = every offer).
 enum DiscoveryFilter {
@@ -67,7 +68,7 @@ class ClientDiscoveryScreen extends StatefulWidget {
 }
 
 class _ClientDiscoveryScreenState extends State<ClientDiscoveryScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, LiveRefresh<ClientDiscoveryScreen> {
   late final FoodSaveApi _api = FoodSaveApi(widget.session.api);
   final FoodSaveLocationService _location = FoodSaveLocationService.instance;
   final TextEditingController _search = TextEditingController();
@@ -142,6 +143,15 @@ class _ClientDiscoveryScreenState extends State<ClientDiscoveryScreen>
     if (!mounted) return;
     setState(() {
       _future = _load();
+    });
+  }
+
+  @override
+  Future<void> liveRefresh() async {
+    final items = await _load();
+    if (!mounted) return;
+    setState(() {
+      _future = liveFuture(items);
     });
   }
 

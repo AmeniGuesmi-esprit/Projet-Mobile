@@ -48,7 +48,7 @@ Map<String, dynamic> _stats() => {
       'retraits_total': 10,
       'repas_sauves': 14,
       'revenus_centimes': 11250,
-      'taux_retrait': 71,
+      'taux_retrait': 59, // 10 retirées / 17 réservations
       'par_jour': _week(),
       'par_statut': {'en_attente': 2, 'retire': 10, 'expire': 4, 'annule': 1},
     };
@@ -228,24 +228,24 @@ void main() {
         findsOneWidget);
     expect(find.descendant(of: donut, matching: find.text('4')),
         findsOneWidget);
-    // Centre = total of the ring (10 + 2 + 4 + 1); the pickup rate (10 of
-    // the 14 non-cancelled, finished reservations) is under the legend.
+    // Centre = total of the ring (10 + 2 + 4 + 1); the pickup rate is the
+    // share of picked-up reservations (10 / 17).
     expect(find.descendant(of: donut, matching: find.text('17')),
         findsOneWidget);
     expect(find.descendant(of: donut, matching: find.text('réservations')),
         findsOneWidget);
     expect(
         tester.widget<Text>(find.byKey(const ValueKey('pickup-rate'))).data,
-        ChartFormat.percent(71));
+        ChartFormat.percent(59));
     expect(
         find.descendant(
             of: donut,
             matching: find.textContaining(
-                '10 retirés sur 14 réservations arrivées à échéance')),
+                '10 paniers retirés sur 17 réservations')),
         findsOneWidget);
     expect(
       find.bySemanticsLabel(RegExp(
-          r'^Réservations par statut : Retiré 10, À retirer 2, Expiré 4, Annulé 1\. Taux de retrait 71')),
+          r'^Réservations par statut : Retiré 10, À retirer 2, Expiré 4, Annulé 1\. Taux de retrait 59')),
       findsOneWidget,
     );
     semantics.dispose();

@@ -92,6 +92,22 @@ Router buildFoodSaveReservationRoutes(FoodSaveContext ctx) {
     });
   });
 
+  // Merchant collected the payment (cash, or client refunded before
+  // pickup): record it, then validate the pickup.
+  router.post('/foodsave/merchant/scan/pay', (Request request) {
+    return guard(() async {
+      requireMerchant(request.userRow);
+      final body = await readJsonBody(request);
+      final token = body['token'];
+      if (token is! String || token.trim().isEmpty) {
+        throw ApiError.badRequest('QR code manquant');
+      }
+      final result =
+          await service.scan(request.userId, token, collectPayment: true);
+      return jsonResponse(result.toJson());
+    });
+  });
+
   return router;
 }
 

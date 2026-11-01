@@ -13,6 +13,7 @@ import 'payment_methods_screen.dart';
 import 'payment_stats_screen.dart';
 import 'transaction_detail_screen.dart';
 import 'widgets/direction_badge.dart';
+import '../../core/live/live_refresh.dart';
 
 class TransactionsScreen extends StatefulWidget {
   const TransactionsScreen({super.key, required this.api});
@@ -23,7 +24,8 @@ class TransactionsScreen extends StatefulWidget {
   State<TransactionsScreen> createState() => TransactionsScreenState();
 }
 
-class TransactionsScreenState extends State<TransactionsScreen> {
+class TransactionsScreenState extends State<TransactionsScreen>
+    with LiveRefresh<TransactionsScreen> {
   late final PaymentApi _payments = PaymentApi(widget.api);
 
   late Future<List<TransactionDto>> _future;
@@ -34,6 +36,18 @@ class TransactionsScreenState extends State<TransactionsScreen> {
   void initState() {
     super.initState();
     _future = _payments.listTransactions();
+  }
+
+  @override
+  Future<void> liveRefresh() async {
+    final items = await _payments.listTransactions(
+      statut: _statutFilter,
+      service: _serviceFilter,
+    );
+    if (!mounted) return;
+    setState(() {
+      _future = liveFuture(items);
+    });
   }
 
   /// Public: lets the parent reload after a payment was created.

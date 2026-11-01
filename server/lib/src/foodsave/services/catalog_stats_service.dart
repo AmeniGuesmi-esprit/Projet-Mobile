@@ -46,11 +46,11 @@ class FoodSaveStatsService {
     ))
         .first['s'] as num;
 
+    // Pickup rate = share of picked-up reservations among ALL of them
+    // (same figure as "Retiré" in the dashboard legend).
     final pickedUp = byStatus[ReservationStatus.retire.apiValue]!;
-    final expired = byStatus[ReservationStatus.expire.apiValue]!;
-    final pickupRate = pickedUp + expired == 0
-        ? 0
-        : (pickedUp * 100 / (pickedUp + expired)).round();
+    final total = byStatus.values.fold<int>(0, (a, b) => a + b);
+    final pickupRate = total == 0 ? 0 : (pickedUp * 100 / total).round();
 
     return MerchantStatsDto(
       paniersActifs: activeBaskets,

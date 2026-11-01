@@ -64,21 +64,12 @@ class FoodSaveRules {
   /// The merchant may still edit price/content/quantity.
   static bool isBasketEditable(BasketStatus s) => !isBasketTerminal(s);
 
-  /// Time a reservation needs before the end of the pickup window: the
-  /// basket's reservation duration, and never less than
-  /// [foodSaveMinPickupLead].
-  static Duration reservationLead(int reservationMinutes) {
-    final d = Duration(minutes: reservationMinutes);
-    return d > foodSaveMinPickupLead ? d : foodSaveMinPickupLead;
-  }
-
-  /// Last moment a basket can be reserved: e.g. pickup until 23:00 with a
-  /// 15-minute reservation duration → reservations close at 22:45.
-  static DateTime reservationDeadline({
-    required DateTime pickupEnd,
-    required int reservationMinutes,
-  }) =>
-      pickupEnd.subtract(reservationLead(reservationMinutes));
+  /// Last moment a basket can be reserved: [foodSaveMinPickupLead] before
+  /// the end of pickup. Reserving later than "end - reservation duration"
+  /// is allowed: the pickup time is then shortened to what is left (see
+  /// [qrExpiry]).
+  static DateTime reservationDeadline(DateTime pickupEnd) =>
+      pickupEnd.subtract(foodSaveMinPickupLead);
 
   /// Whether a client can reserve [quantity] units right now.
   static bool canReserve({
@@ -88,14 +79,12 @@ class FoodSaveRules {
     required DateTime pickupEnd,
     required DateTime basketExpiry,
     required DateTime now,
-    int reservationMinutes = 0,
   }) =>
       status == BasketStatus.disponible &&
       quantity >= 1 &&
       quantity <= available &&
       now.isBefore(basketExpiry) &&
-      now.isBefore(reservationDeadline(
-          pickupEnd: pickupEnd, reservationMinutes: reservationMinutes));
+      now.isBefore(reservationDeadline(pickupEnd));
 
   /// QR expiry: [ttl] (the basket's reservation duration) after the
   /// reservation — counted from the window opening when reserving before

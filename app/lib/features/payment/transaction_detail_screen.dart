@@ -260,8 +260,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   icon: const Icon(Icons.check_circle_outline),
                   label: const Text('Confirmer la réception'),
                 ),
-              if (!_isCredit &&
-                  TransactionRules.canRefund(_transaction.statut))
+              // Hidden once the service was consumed (e.g. FoodSave basket
+              // picked up): the server refuses the refund anyway.
+              if (!_isCredit && _transaction.remboursable)
                 OutlinedButton.icon(
                   onPressed: _refund,
                   icon: const Icon(Icons.undo),

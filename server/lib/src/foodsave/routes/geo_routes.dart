@@ -136,6 +136,28 @@ Router buildFoodSaveGeoRoutes(FoodSaveContext ctx) {
     });
   });
 
+  router.post('/foodsave/notifications/delete', (Request request) {
+    return guard(() async {
+      final body = await readJsonBody(request);
+      final raw = body['ids'];
+      if (raw is! List ||
+          raw.isEmpty ||
+          raw.length > 500 ||
+          raw.any((e) => e is! int)) {
+        throw ApiError.badRequest(
+            'Liste de notifications invalide (1 à 500 identifiants)');
+      }
+      final count =
+          await geo.deleteNotifications(request.userId, raw.cast<int>());
+      return jsonResponse({
+        'message': count > 1
+            ? '$count notifications supprimées'
+            : '$count notification supprimée',
+        'supprimees': count,
+      });
+    });
+  });
+
   router.post('/foodsave/notifications/<id|[0-9]+>/read',
       (Request request, String id) {
     return guard(() async {

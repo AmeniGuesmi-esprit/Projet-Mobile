@@ -11,6 +11,7 @@ import 'basket_form_screen.dart';
 import 'merchant_reservations_screen.dart';
 import 'widgets/merchant_format.dart';
 import 'widgets/merchant_reservation_tile.dart';
+import '../../../core/live/live_refresh.dart';
 
 typedef _DetailData = ({BasketDto basket, List<ReservationDto> reservations});
 
@@ -29,7 +30,8 @@ class MerchantBasketDetailScreen extends StatefulWidget {
 }
 
 class _MerchantBasketDetailScreenState
-    extends State<MerchantBasketDetailScreen> {
+    extends State<MerchantBasketDetailScreen>
+    with LiveRefresh<MerchantBasketDetailScreen> {
   static const int _previewCount = 5;
 
   late final FoodSaveApi _api = FoodSaveApi(widget.session.api);
@@ -47,9 +49,21 @@ class _MerchantBasketDetailScreenState
     );
   }
 
+  @override
+  Future<void> liveRefresh() async {
+    if (_pendingAction != null) return; // don't swap data mid-action
+    final data = await _load();
+    if (!mounted) return;
+    setState(() {
+      _future = liveFuture(data);
+    });
+  }
+
   Future<void> _refresh() {
     final future = _load();
-    setState(() => _future = future);
+    setState(() {
+      _future = future;
+    });
     return future.then((_) {}, onError: (_) {});
   }
 

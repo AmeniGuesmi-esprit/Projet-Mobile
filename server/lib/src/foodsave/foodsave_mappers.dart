@@ -64,7 +64,10 @@ ReservationDto reservationFromRow(
           ? null
           : PaymentMethodType.parse(row['mode_paiement'] as String),
       moyenPaiementId: row['moyen_paiement_id'] as int?,
-      statutPaiement: TransactionStatus.parse(row['statut_paiement'] as String),
+      // Live status of the linked transaction when known (e.g. refunded
+      // by the client from the payment module), else the stored one.
+      statutPaiement: TransactionStatus.parse(
+          (row['t_statut'] ?? row['statut_paiement']) as String),
       transactionId: row['transaction_id'] as int?,
       factureNumero: factureNumero,
       dateCreationQr: row['date_creation_qr'] == null

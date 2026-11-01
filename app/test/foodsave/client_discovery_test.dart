@@ -373,7 +373,7 @@ void main() {
           _iso(now.add(const Duration(minutes: 2)));
       await _pumpDetail(tester, Harness(detail: json));
 
-      expect(find.textContaining('Réservations closes depuis'),
+      expect(find.textContaining('Trop tard pour réserver'),
           findsOneWidget);
       expect(_buttonWithText(tester, 'Réservation indisponible').onPressed,
           isNull);
@@ -395,18 +395,18 @@ void main() {
       await _pumpDetail(tester,
           Harness(detail: closingBasket(const Duration(minutes: 20))));
       expect(_buttonWithText(tester, 'Réserver').onPressed, isNotNull);
-      expect(find.textContaining('Réservable jusqu\'à'), findsOneWidget);
-      expect(find.textContaining('retrait sous 15 min'), findsOneWidget);
+      expect(
+          find.text('À retirer dans les 15 min suivant la réservation'),
+          findsOneWidget);
     });
 
-    testWidgets('15-min reservations, expires in 10 min: button disabled',
-        (tester) async {
+    testWidgets('15-min reservations, expires in 10 min: still reservable, '
+        'pickup shortened to the expiry', (tester) async {
       await _pumpDetail(tester,
           Harness(detail: closingBasket(const Duration(minutes: 10))));
-      expect(find.textContaining('durée de réservation est de 15 min'),
+      expect(_buttonWithText(tester, 'Réserver').onPressed, isNotNull);
+      expect(find.textContaining('Expire bientôt : à retirer avant'),
           findsOneWidget);
-      expect(_buttonWithText(tester, 'Réservation indisponible').onPressed,
-          isNull);
     });
   });
 }

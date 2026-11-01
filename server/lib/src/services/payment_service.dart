@@ -276,6 +276,49 @@ class PaymentService {
     return transactions.toDto(row!, forUserId: payerId);
   }
 
+  /// A payment handed over in person and confirmed by the beneficiary
+  /// (e.g. cash at the counter): recorded `paye`, with no internal wallet
+  /// movement since the money is already in the beneficiary's hands.
+  Future<TransactionDto> recordCounterPayment({
+    required int payerId,
+    required int beneficiaryId,
+    required int montantCentimes,
+    required ServiceType typeService,
+    String? idReference,
+  }) async {
+    if (!isValidAmountCents(montantCentimes)) {
+      throw ApiError.badRequest('Montant invalide');
+    }
+    late int transactionId;
+    await _db.transaction((txn) async {
+      transactionId = await txn.insert('transaction_', {
+        'montant_centimes': montantCentimes,
+        'devise': 'TND',
+        'date': DateTime.now().toIso8601String(),
+        'statut': TransactionStatus.paye.apiValue,
+        'type_service': typeService.apiValue,
+        'id_reference': idReference,
+        'facture_numero': 'TMP-${DateTime.now().year}-'
+            '${++_tmpFactureCounter}-'
+            '${DateTime.now().microsecondsSinceEpoch}',
+        'utilisateur_id': payerId,
+        'beneficiaire_id': beneficiaryId,
+        'moyen_paiement_id': null, // paid at the counter
+      });
+      await txn.update(
+        'transaction_',
+        {
+          'facture_numero': 'FAC-${DateTime.now().year}-'
+              '${transactionId.toString().padLeft(6, '0')}',
+        },
+        where: 'id = ?',
+        whereArgs: [transactionId],
+      );
+    });
+    final row = await transactions.findById(transactionId);
+    return transactions.toDto(row!, forUserId: beneficiaryId);
+  }
+
   Future<TransactionDto> getTransaction(
       int id, int requesterId, UserRole requesterRole) async {
     final row = await transactions.findById(id);
@@ -325,6 +368,10 @@ class PaymentService {
     if (!TransactionRules.canTransition(statut, TransactionStatus.rembourse)) {
       throw ApiError.conflict(
           'Seule une transaction payée peut être remboursée');
+    }
+    if (row['service_consomme'] == 1) {
+      throw ApiError.conflict(
+          'Panier déjà retiré : ce paiement ne peut plus être remboursé');
     }
 
     final amount = row['montant_centimes'] as int;

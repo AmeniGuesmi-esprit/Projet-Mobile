@@ -10,6 +10,7 @@ import '../data/foodsave_api.dart';
 import '../widgets/foodsave_ui.dart';
 import 'foodsave_navigation.dart';
 import 'foodsave_notification_poller.dart';
+import '../../../core/live/live_refresh.dart';
 
 /// FoodSave in-app notifications: newest first, unread emphasised, tap to
 /// open the basket / reservation.
@@ -24,25 +25,115 @@ class FoodSaveNotificationsScreen extends StatefulWidget {
 }
 
 class _FoodSaveNotificationsScreenState
-    extends State<FoodSaveNotificationsScreen> {
-  late final FoodSaveApi _api =
-      FoodSaveNotificationPoller.instance.apiFactory(widget.session);
+    extends State<FoodSaveNotificationsScreen>
+    with LiveRefresh<FoodSaveNotificationsScreen> {
+  late final FoodSaveApi _api = FoodSaveNotificationPoller.instance.apiFactory(
+    widget.session,
+  );
   late Future<List<FoodSaveNotificationDto>> _future = _load();
 
   /// Ids read in this screen (optimistic, before the next reload).
   final Set<int> _readIds = <int>{};
 
+  /// Selection mode (null = off): ids ticked for deletion.
+  Set<int>? _selected;
+
+  /// Deleted here, hidden until the next reload confirms it.
+  final Set<int> _deleted = <int>{};
+  bool _deleting = false;
+
+  void _startSelection(int id) => setState(() => _selected = {id});
+
+  void _toggle(int id) => setState(() {
+    final s = _selected!;
+    if (!s.remove(id)) s.add(id);
+  });
+
+  void _exitSelection() => setState(() => _selected = null);
+
+  Future<void> _deleteSelected(List<FoodSaveNotificationDto> visible) async {
+    final ids = (_selected ?? const <int>{}).toList();
+    if (ids.isEmpty) return;
+    final n = ids.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          n > 1
+              ? 'Supprimer $n notifications ?'
+              : 'Supprimer cette notification ?',
+        ),
+        content: const Text('Cette action est définitive.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _deleting = true);
+    try {
+      final count = await _api.deleteNotifications(ids);
+      if (!mounted) return;
+      setState(() {
+        _deleted.addAll(ids);
+        _selected = null;
+        _deleting = false;
+      });
+      FoodSaveNotificationPoller.instance.unread.value = visible
+          .where((x) => !_deleted.contains(x.id) && _isUnread(x))
+          .length;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              count > 1
+                  ? '$count notifications supprimées'
+                  : 'Notification supprimée',
+            ),
+          ),
+        );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _deleting = false);
+      showFoodSaveError(context, e);
+    }
+  }
+
   Future<List<FoodSaveNotificationDto>> _load() async {
     final items = await _api.notifications();
     _readIds.clear();
-    FoodSaveNotificationPoller.instance.unread.value =
-        items.where((n) => !n.lu).length;
+    FoodSaveNotificationPoller.instance.unread.value = items
+        .where((n) => !n.lu)
+        .length;
     return items;
+  }
+
+  @override
+  Future<void> liveRefresh() async {
+    final items = await _load();
+    if (!mounted) return;
+    setState(() {
+      _future = liveFuture(items);
+    });
   }
 
   Future<void> _reload() async {
     final future = _load();
-    setState(() => _future = future);
+    setState(() {
+      _future = future;
+    });
     try {
       await future;
     } catch (_) {
@@ -50,7 +141,8 @@ class _FoodSaveNotificationsScreenState
     }
   }
 
-  bool _isUnread(FoodSaveNotificationDto n) => !n.lu && !_readIds.contains(n.id);
+  bool _isUnread(FoodSaveNotificationDto n) =>
+      !n.lu && !_readIds.contains(n.id);
 
   Future<void> _open(FoodSaveNotificationDto n) async {
     if (_isUnread(n)) {
@@ -63,8 +155,10 @@ class _FoodSaveNotificationsScreenState
       }
     }
     if (!mounted) return;
-    final screen =
-        foodSaveScreenForPayload(foodSavePayloadFor(n), widget.session);
+    final screen = foodSaveScreenForPayload(
+      foodSavePayloadFor(n),
+      widget.session,
+    );
     if (screen == null || screen is FoodSaveNotificationsScreen) return;
     await Navigator.of(context)
         .push(MaterialPageRoute<void>(builder: (_) => screen));
@@ -79,13 +173,18 @@ class _FoodSaveNotificationsScreenState
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(
-            content: Text('Toutes les notifications sont marquées comme lues')));
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Toutes les notifications sont marquées comme lues'),
+          ),
+        );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _readIds
-        ..clear()
-        ..addAll(previous));
+      setState(
+        () => _readIds
+          ..clear()
+          ..addAll(previous),
+      );
       showFoodSaveError(context, e);
     }
   }
@@ -95,7 +194,10 @@ class _FoodSaveNotificationsScreenState
     return FutureBuilder<List<FoodSaveNotificationDto>>(
       future: _future,
       builder: (context, snapshot) {
-        final items = snapshot.data;
+        final items = snapshot.data
+            ?.where((n) => !_deleted.contains(n.id))
+            .toList();
+        final selected = _selected;
         final hasUnread = items != null && items.any(_isUnread);
         final Widget body;
         if (snapshot.connectionState == ConnectionState.waiting &&
@@ -103,9 +205,10 @@ class _FoodSaveNotificationsScreenState
           body = const _NotificationListSkeleton(key: ValueKey('loading'));
         } else if (snapshot.hasError) {
           body = FoodSaveErrorView(
-              key: const ValueKey('error'),
-              error: snapshot.error,
-              onRetry: _reload);
+            key: const ValueKey('error'),
+            error: snapshot.error,
+            onRetry: _reload,
+          );
         } else if (items == null || items.isEmpty) {
           body = RefreshIndicator(
             key: const ValueKey('empty'),
@@ -114,13 +217,11 @@ class _FoodSaveNotificationsScreenState
               builder: (context, constraints) => SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 child: ConstrainedBox(
-                  constraints:
-                      BoxConstraints(minHeight: constraints.maxHeight),
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
                   child: const EmptyState(
                     icon: Icons.notifications_none_rounded,
                     title: 'Aucune notification',
-                    message:
-                        'Vous serez averti ici des nouveaux paniers et de vos réservations.',
+                    message: 'Vous serez averti ici des nouveaux paniers et de vos réservations.',
                     color: AppColors.moduleFoodSaveDeep,
                   ),
                 ),
@@ -134,11 +235,14 @@ class _FoodSaveNotificationsScreenState
             onRefresh: _reload,
             child: ListView.separated(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.xs,
-                  AppSpacing.md, AppSpacing.xl),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.xs,
+                AppSpacing.md,
+                AppSpacing.xl,
+              ),
               itemCount: items.length,
-              separatorBuilder: (_, _) =>
-                  const SizedBox(height: AppSpacing.xs),
+              separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
               itemBuilder: (context, i) {
                 final n = items[i];
                 return FadeSlideIn(
@@ -148,7 +252,13 @@ class _FoodSaveNotificationsScreenState
                     notification: n,
                     unread: _isUnread(n),
                     timeLabel: formatRelativeFr(n.creeLe, now),
-                    onTap: () => _open(n),
+                    selected: selected?.contains(n.id),
+                    onTap: selected != null
+                        ? () => _toggle(n.id)
+                        : () => _open(n),
+                    onLongPress: selected == null
+                        ? () => _startSelection(n.id)
+                        : null,
                   ),
                 );
               },
@@ -158,24 +268,90 @@ class _FoodSaveNotificationsScreenState
 
         final disableAnimations =
             MediaQuery.maybeDisableAnimationsOf(context) ?? false;
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Notifications'),
-            actions: [
-              IconButton(
-                tooltip: 'Tout marquer comme lu',
-                icon: const Icon(Icons.done_all_rounded),
-                onPressed: hasUnread ? () => _markAll(items) : null,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-            ],
-          ),
-          body: AnimatedSwitcher(
-            duration:
-                disableAnimations ? Duration.zero : FoodSaveMotion.medium,
-            switchInCurve: FoodSaveMotion.curve,
-            switchOutCurve: FoodSaveMotion.curve,
-            child: body,
+        final all = items ?? const <FoodSaveNotificationDto>[];
+        final appBar = selected == null
+            ? AppBar(
+                title: const Text('Notifications'),
+                actions: [
+                  IconButton(
+                    tooltip: 'Sélectionner',
+                    icon: const Icon(Icons.checklist_rounded),
+                    onPressed: all.isEmpty
+                        ? null
+                        : () => setState(() => _selected = <int>{}),
+                  ),
+                  IconButton(
+                    tooltip: 'Tout marquer comme lu',
+                    icon: const Icon(Icons.done_all_rounded),
+                    onPressed: hasUnread ? () => _markAll(items) : null,
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                ],
+              )
+            : AppBar(
+                leading: IconButton(
+                  tooltip: 'Annuler la sélection',
+                  icon: const Icon(Icons.close),
+                  onPressed: _exitSelection,
+                ),
+                title: Text(
+                  selected.isEmpty
+                      ? 'Sélectionnez'
+                      : '${selected.length} sélectionnée'
+                            '${selected.length > 1 ? 's' : ''}',
+                ),
+                actions: [
+                  IconButton(
+                    tooltip: selected.length == all.length
+                        ? 'Tout désélectionner'
+                        : 'Tout sélectionner',
+                    icon: Icon(
+                      selected.length == all.length && all.isNotEmpty
+                          ? Icons.deselect
+                          : Icons.select_all,
+                    ),
+                    onPressed: all.isEmpty
+                        ? null
+                        : () => setState(
+                            () => _selected = selected.length == all.length
+                                ? <int>{}
+                                : all.map((n) => n.id).toSet(),
+                          ),
+                  ),
+                  IconButton(
+                    key: const ValueKey('delete-selected'),
+                    tooltip: 'Supprimer',
+                    icon: _deleting
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.delete_outline,
+                            color: AppColors.error,
+                          ),
+                    onPressed: selected.isEmpty || _deleting
+                        ? null
+                        : () => _deleteSelected(all),
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                ],
+              );
+        return PopScope(
+          canPop: selected == null,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) _exitSelection(); // back closes the selection first
+          },
+          child: Scaffold(
+            appBar: appBar,
+            body: AnimatedSwitcher(
+              duration: disableAnimations
+                  ? Duration.zero
+                  : FoodSaveMotion.medium,
+              switchInCurve: FoodSaveMotion.curve,
+              switchOutCurve: FoodSaveMotion.curve,
+              child: body,
+            ),
           ),
         );
       },
@@ -210,25 +386,41 @@ class _TypeStyle {
   final bool darkIcon;
 
   static _TypeStyle of(FoodSaveNotificationType type) => switch (type) {
-        FoodSaveNotificationType.nouveauPanier => const _TypeStyle(
-            Icons.shopping_basket_outlined, AppColors.moduleFoodSave),
-        FoodSaveNotificationType.qrExpireBientot => const _TypeStyle(
-            Icons.timer_outlined, AppColors.warning,
-            darkIcon: true),
-        FoodSaveNotificationType.reservationExpiree => const _TypeStyle(
-            Icons.timer_off_outlined, AppColors.warning,
-            darkIcon: true),
-        FoodSaveNotificationType.panierAnnule =>
-          const _TypeStyle(Icons.block_rounded, AppColors.error),
-        FoodSaveNotificationType.retraitEffectue => const _TypeStyle(
-            Icons.check_circle_outline_rounded, AppColors.success),
-        FoodSaveNotificationType.reservationConfirmee =>
-          const _TypeStyle(Icons.qr_code_2_rounded, AppColors.info),
-        FoodSaveNotificationType.nouvelleReservation => const _TypeStyle(
-            Icons.shopping_bag_outlined, AppColors.moduleFoodSave),
-        FoodSaveNotificationType.reservationAnnulee =>
-          const _TypeStyle(Icons.event_busy_outlined, AppColors.error),
-      };
+    FoodSaveNotificationType.nouveauPanier => const _TypeStyle(
+      Icons.shopping_basket_outlined,
+      AppColors.moduleFoodSave,
+    ),
+    FoodSaveNotificationType.qrExpireBientot => const _TypeStyle(
+      Icons.timer_outlined,
+      AppColors.warning,
+      darkIcon: true,
+    ),
+    FoodSaveNotificationType.reservationExpiree => const _TypeStyle(
+      Icons.timer_off_outlined,
+      AppColors.warning,
+      darkIcon: true,
+    ),
+    FoodSaveNotificationType.panierAnnule => const _TypeStyle(
+      Icons.block_rounded,
+      AppColors.error,
+    ),
+    FoodSaveNotificationType.retraitEffectue => const _TypeStyle(
+      Icons.check_circle_outline_rounded,
+      AppColors.success,
+    ),
+    FoodSaveNotificationType.reservationConfirmee => const _TypeStyle(
+      Icons.qr_code_2_rounded,
+      AppColors.info,
+    ),
+    FoodSaveNotificationType.nouvelleReservation => const _TypeStyle(
+      Icons.shopping_bag_outlined,
+      AppColors.moduleFoodSave,
+    ),
+    FoodSaveNotificationType.reservationAnnulee => const _TypeStyle(
+      Icons.event_busy_outlined,
+      AppColors.error,
+    ),
+  };
 }
 
 class _NotificationTile extends StatelessWidget {
@@ -237,24 +429,42 @@ class _NotificationTile extends StatelessWidget {
     required this.unread,
     required this.timeLabel,
     required this.onTap,
+    this.onLongPress,
+    this.selected,
   });
 
   final FoodSaveNotificationDto notification;
   final bool unread;
   final String timeLabel;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+
+  /// null = not in selection mode.
+  final bool? selected;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final style = _TypeStyle.of(notification.type);
+    final isSelected = selected ?? false;
     return Semantics(
       button: true,
-      label: '${unread ? 'Non lue. ' : ''}${notification.titre}. '
+      selected: selected,
+      label:
+          '${selected == null
+              ? ''
+              : isSelected
+              ? 'Sélectionnée. '
+              : 'Non sélectionnée. '}'
+          '${unread ? 'Non lue. ' : ''}${notification.titre}. '
           '${notification.message}. $timeLabel',
       excludeSemantics: true,
       child: Material(
-        color: unread ? AppColors.moduleFoodSaveSoft : AppColors.surface,
+        color: isSelected
+            ? AppColors.info.withValues(alpha: 0.10)
+            : unread
+            ? AppColors.moduleFoodSaveSoft
+            : AppColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.lg),
           side: BorderSide(
@@ -266,6 +476,7 @@ class _NotificationTile extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
+          onLongPress: onLongPress,
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 72),
             child: Padding(
@@ -273,17 +484,34 @@ class _NotificationTile extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (selected != null) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Icon(
+                        isSelected
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked,
+                        color: isSelected
+                            ? AppColors.info
+                            : AppColors.textSecondaryStrong,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                  ],
                   Container(
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: style.color
-                          .withValues(alpha: style.darkIcon ? 0.22 : 0.12),
+                      color: style.color.withValues(
+                        alpha: style.darkIcon ? 0.22 : 0.12,
+                      ),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(style.icon,
-                        size: 22,
-                        color: style.darkIcon ? AppColors.text : style.color),
+                    child: Icon(
+                      style.icon,
+                      size: 22,
+                      color: style.darkIcon ? AppColors.text : style.color,
+                    ),
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
@@ -321,15 +549,17 @@ class _NotificationTile extends StatelessWidget {
                         Text(
                           notification.message,
                           style: theme.textTheme.bodyMedium?.copyWith(
-                              color: AppColors.textSecondaryStrong),
+                            color: AppColors.textSecondaryStrong,
+                          ),
                         ),
                         const SizedBox(height: AppSpacing.xs),
                         Text(
                           timeLabel,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: AppColors.textSecondaryStrong,
-                            fontWeight:
-                                unread ? FontWeight.w600 : FontWeight.w400,
+                            fontWeight: unread
+                                ? FontWeight.w600
+                                : FontWeight.w400,
                           ),
                         ),
                       ],
@@ -350,30 +580,30 @@ class _NotificationListSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListView.separated(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: 5,
-        separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
-        itemBuilder: (_, _) => const Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SkeletonBox(height: 44, width: 44, radius: AppRadius.pill),
-            SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SkeletonBox(height: 16, width: 180),
-                  SizedBox(height: AppSpacing.xs),
-                  SkeletonBox(height: 14),
-                  SizedBox(height: AppSpacing.xxs),
-                  SkeletonBox(height: 12, width: 90),
-                ],
-              ),
-            ),
-          ],
+    padding: const EdgeInsets.all(AppSpacing.md),
+    physics: const NeverScrollableScrollPhysics(),
+    itemCount: 5,
+    separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
+    itemBuilder: (_, _) => const Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SkeletonBox(height: 44, width: 44, radius: AppRadius.pill),
+        SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SkeletonBox(height: 16, width: 180),
+              SizedBox(height: AppSpacing.xs),
+              SkeletonBox(height: 14),
+              SizedBox(height: AppSpacing.xxs),
+              SkeletonBox(height: 12, width: 90),
+            ],
+          ),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 /// AppBar bell with the unread badge; opens [FoodSaveNotificationsScreen].
@@ -391,8 +621,11 @@ class FoodSaveNotificationsButton extends StatelessWidget {
         tooltip: count == 0
             ? 'Notifications'
             : 'Notifications, $count non lue${count > 1 ? 's' : ''}',
-        onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-            builder: (_) => FoodSaveNotificationsScreen(session: session))),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => FoodSaveNotificationsScreen(session: session),
+          ),
+        ),
         icon: Badge(
           isLabelVisible: count > 0,
           label: Text(count > 99 ? '99+' : '$count'),

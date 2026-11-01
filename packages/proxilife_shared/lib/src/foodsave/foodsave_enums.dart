@@ -111,7 +111,12 @@ enum ScanOutcome {
   annule('annule'),
   invalide('invalide'),
   autreCommercant('autre_commercant'),
-  paiementNonConfirme('paiement_non_confirme');
+  paiementNonConfirme('paiement_non_confirme'),
+
+  /// Valid QR, but the merchant must collect the payment first (cash, or a
+  /// client refunded before pickup). Nothing changed: confirm with
+  /// `POST /foodsave/merchant/scan/pay`.
+  paiementRequis('paiement_requis');
 
   const ScanOutcome(this.apiValue);
   final String apiValue;

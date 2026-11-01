@@ -205,6 +205,13 @@ class FoodSaveApi {
   Future<ScanResultDto> scan(String token) async => ScanResultDto.fromJson(
       await _client.postJson('/foodsave/merchant/scan', {'token': token}));
 
+  /// « Payer » after a `paiement_requis` scan: the merchant collected the
+  /// money (cash / client refunded before pickup) → payment recorded, then
+  /// pickup validated.
+  Future<ScanResultDto> payAtPickup(String token) async =>
+      ScanResultDto.fromJson(await _client
+          .postJson('/foodsave/merchant/scan/pay', {'token': token}));
+
   // ------------------------------------------------------- client catalog
 
   /// Available baskets. Without [latitude]/[longitude] the server uses the
@@ -281,6 +288,13 @@ class FoodSaveApi {
 
   Future<void> markNotificationRead(int id) =>
       _client.postJson('/foodsave/notifications/$id/read');
+
+  /// Deletes the given notifications (own ones only). Returns the count.
+  Future<int> deleteNotifications(List<int> ids) async {
+    final json = await _client
+        .postJson('/foodsave/notifications/delete', {'ids': ids});
+    return json['supprimees'] as int? ?? 0;
+  }
 
   Future<void> markAllNotificationsRead() =>
       _client.postJson('/foodsave/notifications/read-all');

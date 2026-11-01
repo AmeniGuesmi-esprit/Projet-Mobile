@@ -409,6 +409,50 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
+  testWidgets('notifications screen: select several and delete them',
+      (tester) async {
+    Set<Object?>? deletedIds;
+    final server = FakeServer((r) {
+      if (r.url.path == '/foodsave/notifications/delete') {
+        deletedIds = (jsonDecode(r.body)['ids'] as List).toSet();
+        return jsonResponse({'message': 'ok', 'supprimees': 2});
+      }
+      return r.url.path == '/foodsave/notifications'
+          ? jsonResponse({
+              'items': [
+                notif(1, panierId: 1),
+                notif(2, panierId: 2),
+                notif(3, panierId: 3),
+              ]
+            })
+          : jsonResponse({'message': 'ok'});
+    });
+    await pumpScreen(tester, authedSession(server));
+
+    // Long press starts the selection; a tap toggles another one.
+    await tester.longPress(find.text('Titre 1'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 sélectionnée'), findsOneWidget);
+    await tester.tap(find.text('Titre 3'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 sélectionnées'), findsOneWidget);
+    expect(server.count('POST /foodsave/notifications/1/read'), 0);
+
+    await tester.tap(find.byKey(const ValueKey('delete-selected')));
+    await tester.pumpAndSettle();
+    expect(find.text('Supprimer 2 notifications ?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Supprimer'));
+    await tester.pumpAndSettle();
+
+    expect(server.count('POST /foodsave/notifications/delete'), 1);
+    expect(deletedIds, {1, 3});
+    expect(find.text('Titre 1'), findsNothing);
+    expect(find.text('Titre 3'), findsNothing);
+    expect(find.text('Titre 2'), findsOneWidget);
+    expect(find.text('2 notifications supprimées'), findsOneWidget);
+    expect(find.text('Notifications'), findsOneWidget); // selection closed
+  });
+
   testWidgets('notifications screen: mark all as read', (tester) async {
     final server = FakeServer((r) => r.url.path == '/foodsave/notifications'
         ? jsonResponse({

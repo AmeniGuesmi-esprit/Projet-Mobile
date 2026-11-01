@@ -98,6 +98,18 @@ class FoodSaveGeoService {
     if (count == 0) throw ApiError.notFound('Notification introuvable');
   }
 
+  /// Deletes the caller's notifications among [ids] (others' are ignored).
+  /// Returns how many were deleted.
+  Future<int> deleteNotifications(int userId, List<int> ids) async {
+    if (ids.isEmpty) return 0;
+    final placeholders = List.filled(ids.length, '?').join(', ');
+    return ctx.db.delete(
+      'foodsave_notification',
+      where: 'utilisateur_id = ? AND id IN ($placeholders)',
+      whereArgs: [userId, ...ids],
+    );
+  }
+
   /// Marks every own unread notification as read. Returns how many changed.
   Future<int> markAllRead(int userId) => ctx.db.update(
         'foodsave_notification',

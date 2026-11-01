@@ -72,6 +72,13 @@ class ScanOutcomeStyle {
             title: 'Réservation d\'un autre commerce',
             advice:
                 'Cette réservation ne concerne pas votre commerce : indiquez au client le bon point de retrait.'),
+        ScanOutcome.paiementRequis => const ScanOutcomeStyle(
+            color: AppColors.moduleFoodSaveDeep,
+            onColor: Colors.white,
+            icon: Icons.payments_outlined,
+            title: 'Paiement à encaisser',
+            advice:
+                'Encaissez le montant auprès du client, puis touchez « Payer » pour valider le paiement et le retrait.'),
         ScanOutcome.paiementNonConfirme => const ScanOutcomeStyle(
             color: AppColors.warning,
             onColor: AppColors.text,
@@ -89,11 +96,17 @@ class ScanResultView extends StatefulWidget {
     required this.result,
     required this.onScanAgain,
     required this.onDone,
+    this.onPay,
+    this.paying = false,
   });
 
   final ScanResultDto result;
   final VoidCallback onScanAgain;
   final VoidCallback onDone;
+
+  /// « Payer » (shown for [ScanOutcome.paiementRequis]).
+  final VoidCallback? onPay;
+  final bool paying;
 
   @override
   State<ScanResultView> createState() => _ScanResultViewState();
@@ -194,8 +207,13 @@ class _ScanResultViewState extends State<ScanResultView>
                               textAlign: TextAlign.center,
                               style: theme.textTheme.bodyLarge),
                           const SizedBox(height: AppSpacing.lg),
-                          if (result.accepte && r != null)
-                            _Details(reservation: r)
+                          if (r != null &&
+                              (result.accepte ||
+                                  result.resultat == ScanOutcome.paiementRequis))
+                            _Details(
+                                reservation: r,
+                                toCollect: result.resultat ==
+                                    ScanOutcome.paiementRequis)
                           else
                             _Advice(text: style.advice, color: style.color),
                         ],
@@ -209,6 +227,28 @@ class _ScanResultViewState extends State<ScanResultView>
                     AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.md),
                 child: Column(
                   children: [
+                    if (result.resultat == ScanOutcome.paiementRequis &&
+                        widget.onPay != null) ...[
+                      FilledButton.icon(
+                        key: const ValueKey('scan-pay'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.success,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(56),
+                        ),
+                        onPressed: widget.paying ? null : widget.onPay,
+                        icon: widget.paying
+                            ? const SizedBox.square(
+                                dimension: 20,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2.4, color: Colors.white))
+                            : const Icon(Icons.payments_outlined),
+                        label: Text(r == null
+                            ? 'Payer'
+                            : 'Payer ${MoneyText.format(r.montantCentimes)}'),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
                     FilledButton.icon(
                       style: foodSaveFilledStyle(),
                       onPressed: widget.onScanAgain,
@@ -236,9 +276,12 @@ class _ScanResultViewState extends State<ScanResultView>
 }
 
 class _Details extends StatelessWidget {
-  const _Details({required this.reservation});
+  const _Details({required this.reservation, this.toCollect = false});
 
   final ReservationDto reservation;
+
+  /// Payment still to collect at the counter.
+  final bool toCollect;
 
   @override
   Widget build(BuildContext context) {
@@ -251,7 +294,11 @@ class _Details extends StatelessWidget {
         r.panier?.titre ?? 'Panier n° ${r.panierId}'
       ),
       (Icons.inventory_2_outlined, 'Quantité', '× ${r.quantiteReservee}'),
-      (Icons.payments_outlined, 'Montant payé', MoneyText.format(r.montantCentimes)),
+      (
+        Icons.payments_outlined,
+        toCollect ? 'À encaisser' : 'Montant payé',
+        MoneyText.format(r.montantCentimes)
+      ),
     ];
     return Card(
       child: Padding(

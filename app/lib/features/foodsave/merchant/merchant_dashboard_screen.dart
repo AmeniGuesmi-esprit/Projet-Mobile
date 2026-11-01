@@ -19,6 +19,7 @@ import 'merchant_baskets_screen.dart';
 import 'merchant_reservations_screen.dart';
 import 'scan_screen.dart';
 import 'store_setup_screen.dart';
+import '../../../core/live/live_refresh.dart';
 
 /// Merchant home of FoodSave: greeting, store, quick actions, KPIs and the
 /// activity charts (palette: FoodSave / accent for today / warning).
@@ -40,7 +41,8 @@ class _DashboardData {
   final MerchantStatsDto? stats;
 }
 
-class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
+class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
+    with LiveRefresh<MerchantDashboardScreen> {
   late final FoodSaveApi _api = FoodSaveApi(widget.session.api);
   late Future<_DashboardData> _future;
 
@@ -77,9 +79,20 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
     return data;
   }
 
+  @override
+  Future<void> liveRefresh() async {
+    final data = await _load();
+    if (!mounted) return;
+    setState(() {
+      _future = liveFuture(data);
+    });
+  }
+
   Future<void> _refresh() async {
     final future = _load();
-    setState(() => _future = future);
+    setState(() {
+      _future = future;
+    });
     try {
       await future;
     } catch (e) {

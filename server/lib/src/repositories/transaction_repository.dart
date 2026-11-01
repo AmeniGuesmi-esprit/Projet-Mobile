@@ -12,7 +12,11 @@ class TransactionRepository {
   static const String _selectWithParties =
       'SELECT t.*, u.nom AS b_nom, u.prenom AS b_prenom, u.email AS b_email, '
       'p.nom AS p_nom, p.prenom AS p_prenom, p.email AS p_email, '
-      'm.type AS mp_type '
+      'm.type AS mp_type, '
+      // Service already consumed (FoodSave basket picked up with this
+      // payment): the payment can no longer be refunded.
+      'EXISTS (SELECT 1 FROM reservation r WHERE r.transaction_id = t.id '
+      "AND r.statut = 'retire') AS service_consomme "
       'FROM transaction_ t '
       'LEFT JOIN utilisateur u ON u.id = t.beneficiaire_id '
       'LEFT JOIN utilisateur p ON p.id = t.utilisateur_id '
@@ -96,6 +100,9 @@ class TransactionRepository {
       beneficiaireEmail: row['b_email'] as String?,
       payeurNom: payerName,
       payeurEmail: row['p_email'] as String?,
+      remboursable:
+          TransactionRules.canRefund(TransactionStatus.parse(row['statut'] as String)) &&
+              row['service_consomme'] != 1,
     );
   }
 }

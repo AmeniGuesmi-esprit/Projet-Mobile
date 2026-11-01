@@ -84,15 +84,20 @@ void main() {
   group('reservation deadline', () {
     final end = DateTime.utc(2026, 10, 27, 23);
 
-    test('closes "duration" before the end (min 5 min)', () {
-      expect(
-          FoodSaveRules.reservationDeadline(
-              pickupEnd: end, reservationMinutes: 15),
-          DateTime.utc(2026, 10, 27, 22, 45));
-      expect(
-          FoodSaveRules.reservationDeadline(
-              pickupEnd: end, reservationMinutes: 0),
+    test('closes 5 min before the end, whatever the duration', () {
+      expect(FoodSaveRules.reservationDeadline(end),
           DateTime.utc(2026, 10, 27, 22, 55));
+    });
+
+    test('less time left than the duration: pickup until the end', () {
+      // 15-minute reservations, reserved at 22:50 → QR until 23:00.
+      expect(
+          FoodSaveRules.qrExpiry(
+              now: DateTime.utc(2026, 10, 27, 22, 50),
+              pickupStart: DateTime.utc(2026, 10, 27, 22),
+              pickupEnd: end,
+              ttl: const Duration(minutes: 15)),
+          end);
     });
 
     bool can(DateTime now) => FoodSaveRules.canReserve(
@@ -102,12 +107,11 @@ void main() {
           pickupEnd: end,
           basketExpiry: end,
           now: now,
-          reservationMinutes: 15,
         );
 
-    test('22:44 can reserve, 22:45 cannot', () {
-      expect(can(DateTime.utc(2026, 10, 27, 22, 44)), isTrue);
-      expect(can(DateTime.utc(2026, 10, 27, 22, 45)), isFalse);
+    test('22:50 can still reserve, 22:55 cannot', () {
+      expect(can(DateTime.utc(2026, 10, 27, 22, 50)), isTrue);
+      expect(can(DateTime.utc(2026, 10, 27, 22, 55)), isFalse);
     });
   });
 

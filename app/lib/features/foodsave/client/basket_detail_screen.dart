@@ -15,6 +15,7 @@ import 'reservation_qr_screen.dart';
 import 'reserve_flow.dart';
 import 'widgets/client_basket_card.dart';
 import 'widgets/client_format.dart';
+import '../../../core/live/live_refresh.dart';
 
 /// Client view of one basket with its REAL server status, store and a
 /// sticky "Réserver" call to action.
@@ -37,7 +38,8 @@ class BasketDetailScreen extends StatefulWidget {
   State<BasketDetailScreen> createState() => _BasketDetailScreenState();
 }
 
-class _BasketDetailScreenState extends State<BasketDetailScreen> {
+class _BasketDetailScreenState extends State<BasketDetailScreen>
+    with LiveRefresh<BasketDetailScreen> {
   late final FoodSaveApi _api = FoodSaveApi(widget.session.api);
   late Future<BasketDto> _future = _fetch();
 
@@ -45,30 +47,22 @@ class _BasketDetailScreenState extends State<BasketDetailScreen> {
   BasketDto? _fresh;
   bool _reserving = false;
 
-  /// Rebuilds when reservations close, to disable the button on time.
-  Timer? _deadlineTimer;
-
   Future<BasketDto> _fetch() async {
     final basket = await _api.getBasket(widget.basketId);
     _fresh = basket;
-    _armDeadline(basket);
     return basket;
   }
 
-  void _armDeadline(BasketDto basket) {
-    _deadlineTimer?.cancel();
-    final left = reservationDeadlineOf(basket).difference(DateTime.now());
-    if (left.isNegative || left > const Duration(hours: 24)) return;
-    _deadlineTimer = Timer(left + const Duration(seconds: 1), () {
-      if (mounted) setState(() {});
+  /// Live stock / status, pickup hint and button state (closes on time).
+  @override
+  Future<void> liveRefresh() async {
+    final basket = await _fetch();
+    if (!mounted) return;
+    setState(() {
+      _future = liveFuture(basket);
     });
   }
 
-  @override
-  void dispose() {
-    _deadlineTimer?.cancel();
-    super.dispose();
-  }
 
   void _reload() {
     if (!mounted) return;
@@ -591,8 +585,7 @@ class _ReserveBar extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xxs),
           Text(
-            'Réservable jusqu\'à ${clockFr(reservationDeadlineOf(basket))} · '
-            'retrait sous ${basket.dureeReservationMinutes} min',
+            pickupHintFr(basket, DateTime.now()),
             key: const ValueKey('reservable-until'),
             textAlign: TextAlign.center,
             style: theme.bodySmall

@@ -174,7 +174,6 @@ class _StatusDonutChartState extends State<StatusDonutChart>
     );
 
     final picked = widget.parStatut[ReservationStatus.retire.apiValue] ?? 0;
-    final expired = widget.parStatut[ReservationStatus.expire.apiValue] ?? 0;
 
     final legend = Column(
       mainAxisSize: MainAxisSize.min,
@@ -182,7 +181,7 @@ class _StatusDonutChartState extends State<StatusDonutChart>
       children: [
         for (final s in segments)
           _LegendRow(segment: s, total: total),
-        if (picked + expired > 0) ...[
+        if (total > 0) ...[
           const Divider(height: AppSpacing.lg),
           Row(
             children: [
@@ -203,10 +202,9 @@ class _StatusDonutChartState extends State<StatusDonutChart>
           ),
           const SizedBox(height: AppSpacing.xxs),
           Text(
-            '$picked retiré${picked > 1 ? 's' : ''} sur ${picked + expired} '
-            'réservation${picked + expired > 1 ? 's' : ''} arrivée'
-            '${picked + expired > 1 ? 's' : ''} à échéance '
-            '(annulations et réservations en cours non comptées).',
+            '$picked panier${picked > 1 ? 's' : ''} retiré'
+            '${picked > 1 ? 's' : ''} sur $total '
+            'réservation${total > 1 ? 's' : ''}.',
             style: theme.bodySmall,
           ),
         ],

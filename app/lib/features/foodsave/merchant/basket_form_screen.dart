@@ -552,9 +552,8 @@ class _BasketFormScreenState extends State<BasketFormScreen> {
               'l\'avoir réservé : passé ce délai, la réservation expire et '
               'son QR code n\'est plus valide. Au plus '
               '${_durationLabel(_openMinutes.clamp(0, foodSaveMaxReservationMinutes))} '
-              '(temps entre le début et l\'expiration) : les réservations '
-              'ferment ${_durationLabel(_reservationMinutes)} avant '
-              'l\'expiration, à ${formatTimeFr(FoodSaveRules.reservationDeadline(pickupEnd: _expiry, reservationMinutes: _reservationMinutes))}.',
+              '(temps entre le début et l\'expiration). Si le panier '
+              'expire plus tôt, le retrait est limité au temps restant.',
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: AppColors.textSecondaryStrong),
             ),

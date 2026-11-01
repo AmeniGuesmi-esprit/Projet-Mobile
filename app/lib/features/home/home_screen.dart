@@ -13,6 +13,7 @@ import '../payment/new_payment_screen.dart';
 import '../payment/payment_api.dart';
 import '../payment/payment_methods_screen.dart';
 import '../payment/transaction_detail_screen.dart';
+import '../../core/live/live_refresh.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.session});
@@ -122,7 +123,8 @@ class HomeScreen extends StatelessWidget {
             Text('Paiements',
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.sm),
-            _RecentTransactions(api: session.api),
+            _RecentTransactions(
+                api: session.api, refreshUser: session.refreshUser),
           ],
         ),
       ),
@@ -132,21 +134,37 @@ class HomeScreen extends StatelessWidget {
 
 /// The three most recent transactions, loaded once on first display.
 class _RecentTransactions extends StatefulWidget {
-  const _RecentTransactions({required this.api});
+  const _RecentTransactions({required this.api, this.refreshUser});
 
   final ApiClient api;
+
+  /// Live balance (the home header reads the session's user).
+  final Future<void> Function()? refreshUser;
 
   @override
   State<_RecentTransactions> createState() => _RecentTransactionsState();
 }
 
-class _RecentTransactionsState extends State<_RecentTransactions> {
+class _RecentTransactionsState extends State<_RecentTransactions>
+    with LiveRefresh<_RecentTransactions> {
   late Future<List<TransactionDto>> _future = _load();
+
+  @override
+  Future<void> liveRefresh() async {
+    final items = await _load();
+    if (!mounted) return;
+    setState(() {
+      _future = liveFuture(items);
+    });
+    await widget.refreshUser?.call();
+  }
 
   Future<List<TransactionDto>> _load() =>
       PaymentApi(widget.api).listTransactions();
 
-  void _reload() => setState(() => _future = _load());
+  void _reload() => setState(() {
+      _future = _load();
+    });
 
   @override
   Widget build(BuildContext context) {

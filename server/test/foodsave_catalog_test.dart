@@ -809,7 +809,7 @@ void main() {
       expect(body['retraits_total'], 3);
       expect(body['repas_sauves'], 4);
       expect(body['revenus_centimes'], 1000 + 500 + 500 + 500 + 700);
-      expect(body['taux_retrait'], 75); // 3 / (3 + 1)
+      expect(body['taux_retrait'], 50); // 3 retirées / 6 réservations
       expect(body['par_statut'],
           {'en_attente': 1, 'retire': 3, 'expire': 1, 'annule': 1});
 

@@ -13,6 +13,7 @@ import 'merchant_reservations_screen.dart';
 import 'scan_screen.dart';
 import 'widgets/merchant_basket_card.dart';
 import 'widgets/status_filter_bar.dart';
+import '../../../core/live/live_refresh.dart';
 
 /// The merchant's baskets, filterable by status, with a "Nouveau panier" FAB.
 class MerchantBasketsScreen extends StatefulWidget {
@@ -24,7 +25,8 @@ class MerchantBasketsScreen extends StatefulWidget {
   State<MerchantBasketsScreen> createState() => _MerchantBasketsScreenState();
 }
 
-class _MerchantBasketsScreenState extends State<MerchantBasketsScreen> {
+class _MerchantBasketsScreenState extends State<MerchantBasketsScreen>
+    with LiveRefresh<MerchantBasketsScreen> {
   late final FoodSaveApi _api = FoodSaveApi(widget.session.api);
   late Future<List<BasketDto>> _future = _api.listMyBaskets();
   BasketStatus? _filter;
@@ -37,9 +39,20 @@ class _MerchantBasketsScreenState extends State<MerchantBasketsScreen> {
     FilterOption(BasketStatus.annule, 'Annulés'),
   ];
 
+  @override
+  Future<void> liveRefresh() async {
+    final items = await _api.listMyBaskets();
+    if (!mounted) return;
+    setState(() {
+      _future = liveFuture(items);
+    });
+  }
+
   Future<void> _refresh() {
     final future = _api.listMyBaskets();
-    setState(() => _future = future);
+    setState(() {
+      _future = future;
+    });
     return future.then((_) {}, onError: (_) {});
   }
 

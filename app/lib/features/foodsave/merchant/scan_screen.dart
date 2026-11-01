@@ -40,7 +40,11 @@ class _ScanScreenState extends State<ScanScreen> {
   MobileScannerController? _controller;
 
   bool _busy = false;
+  bool _paying = false;
   ScanResultDto? _result;
+
+  /// Token of the code behind [_result] (for « Payer »).
+  String? _resultToken;
   String? _lastCode;
   DateTime? _lastAt;
 
@@ -98,6 +102,7 @@ class _ScanScreenState extends State<ScanScreen> {
       if (!mounted) return;
       setState(() {
         _result = result;
+        _resultToken = token;
         _busy = false;
       });
     } catch (e) {
@@ -108,9 +113,29 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
+  /// The merchant collected the money: record it and validate the pickup.
+  Future<void> _pay() async {
+    final token = _resultToken;
+    if (token == null || _paying) return;
+    setState(() => _paying = true);
+    try {
+      final result = await _api.payAtPickup(token);
+      if (!mounted) return;
+      setState(() {
+        _result = result;
+        _paying = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _paying = false);
+      showFoodSaveError(context, e);
+    }
+  }
+
   void _scanAgain() {
     setState(() {
       _result = null;
+      _resultToken = null;
       _lastAt = DateTime.now(); // keeps the previous code ignored for 3 s
     });
     _camera((c) => c.start());
@@ -188,6 +213,8 @@ class _ScanScreenState extends State<ScanScreen> {
                   : ScanResultView(
                       key: ValueKey(result),
                       result: result,
+                      onPay: _pay,
+                      paying: _paying,
                       onScanAgain: _scanAgain,
                       onDone: () => Navigator.of(context).maybePop(),
                     ),

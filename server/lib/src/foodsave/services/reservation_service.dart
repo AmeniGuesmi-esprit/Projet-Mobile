@@ -44,6 +44,7 @@ class FoodSaveReservationService {
 
   static const String _select =
       'SELECT r.*, t.facture_numero AS t_facture_numero, '
+      't.statut AS t_statut, '
       'u.prenom AS u_prenom, u.nom AS u_nom, '
       'p.commercant_id AS p_commercant_id, p.titre AS p_titre, '
       'p.creneau_retrait_debut AS p_debut, p.creneau_retrait_fin AS p_fin, '
@@ -90,12 +91,9 @@ class FoodSaveReservationService {
     // 1) Take the units + create the reservation atomically.
     final now = ctx.now();
     final nowIso = now.toIso8601String();
-    // Reservations close "reservation duration" before the end of pickup
-    // (e.g. 22:45 for a basket ending at 23:00 with 15 min).
-    final duree = basket['duree_reservation_minutes'] as int? ??
-        foodSaveDefaultReservationMinutes;
-    final minEndIso =
-        now.add(FoodSaveRules.reservationLead(duree)).toIso8601String();
+    // Reservable until 5 min before the end of pickup; when less time than
+    // the reservation duration is left, the QR simply expires at the end.
+    final minEndIso = now.add(foodSaveMinPickupLead).toIso8601String();
     late int reservationId;
     late int montant;
     await ctx.db.transaction((txn) async {
@@ -104,8 +102,7 @@ class FoodSaveReservationService {
         "statut = CASE WHEN quantite - ? = 0 THEN 'epuise' ELSE statut END, "
         'mis_a_jour_le = ? '
         'WHERE id = ? AND statut = ? AND quantite >= ? '
-        'AND date_expiration > ? AND creneau_retrait_fin > ? '
-        'AND duree_reservation_minutes = ?',
+        'AND date_expiration > ? AND creneau_retrait_fin > ?',
         [
           quantite,
           quantite,
@@ -115,7 +112,6 @@ class FoodSaveReservationService {
           quantite,
           nowIso,
           minEndIso,
-          duree,
         ],
       );
       final rows =
@@ -354,7 +350,10 @@ class FoodSaveReservationService {
   // -------------------------------------------------------------------------
 
   /// Validates a pickup QR. Business refusals are results, never errors.
-  Future<ScanResultDto> scan(int merchantId, String token) async {
+  /// [collectPayment]: the merchant tapped « Payer » after collecting the
+  /// money (cash / client refunded before pickup).
+  Future<ScanResultDto> scan(int merchantId, String token,
+      {bool collectPayment = false}) async {
     final payload = await qr.verify(token);
     if (payload == null) {
       return _refuse(merchantId, null, ScanOutcome.invalide,
@@ -375,26 +374,17 @@ class FoodSaveReservationService {
           ScanOutcome.autreCommercant,
           'Ce QR code concerne la réservation d\'un autre commerce.');
     }
-    return _scanOwned(merchantId, row, payload.nonce, retry: true);
+    return _scanOwned(merchantId, row, payload.nonce,
+        retry: true, collectPayment: collectPayment);
   }
 
   Future<ScanResultDto> _scanOwned(
       int merchantId, Map<String, Object?> row, String nonce,
-      {required bool retry}) async {
+      {required bool retry, bool collectPayment = false}) async {
     final id = row['id'] as int;
     final terminal = _terminalOutcome(row);
     if (terminal != null) {
       return _refuse(merchantId, id, terminal.$1, terminal.$2,
-          row: row);
-    }
-    // Cash is collected right now, at the counter (confirmed after the scan).
-    final cashAtPickup =
-        row['mode_paiement'] == PaymentMethodType.especes.apiValue &&
-            row['statut_paiement'] == TransactionStatus.enAttente.apiValue;
-    if (row['statut_paiement'] != TransactionStatus.paye.apiValue &&
-        !cashAtPickup) {
-      return _refuse(merchantId, id, ScanOutcome.paiementNonConfirme,
-          'Paiement non confirmé : ne remettez pas le panier.',
           row: row);
     }
     final current = row['qr_nonce'] as String?;
@@ -411,6 +401,41 @@ class FoodSaveReservationService {
           'QR code expiré : le panier a été remis en vente. '
           'Ne remettez pas le panier.',
           row: fresh);
+    }
+
+    // Live payment state (the client may have been refunded from the
+    // payment module since the reservation).
+    final montant = formatDinars(row['montant_centimes'] as int);
+    final payment = _paymentStateOf(row);
+    var collected = false;
+    switch (payment) {
+      case _PickupPayment.paid:
+        break;
+      case _PickupPayment.unpaid:
+        return _refuse(merchantId, id, ScanOutcome.paiementNonConfirme,
+            'Paiement non confirmé : ne remettez pas le panier.',
+            row: row);
+      case _PickupPayment.cashToCollect:
+      case _PickupPayment.refunded:
+        if (!collectPayment) {
+          await ctx.journal.log('paiement_requis',
+              utilisateurId: merchantId,
+              panierId: row['panier_id'] as int,
+              reservationId: id,
+              details: {'cas': payment.name});
+          return ScanResultDto(
+            resultat: ScanOutcome.paiementRequis,
+            message: payment == _PickupPayment.refunded
+                ? 'Le client a été remboursé : demandez-lui de payer '
+                    '$montant, puis touchez « Payer » pour valider.'
+                : 'Paiement en espèces : encaissez $montant auprès du '
+                    'client, puis touchez « Payer » pour valider.',
+            reservation:
+                (await _toDtos([row], viewerId: merchantId)).first,
+          );
+        }
+        await _collectAtPickup(row, merchantId, payment);
+        collected = true;
     }
 
     final accepted = await ctx.db.rawUpdate(
@@ -433,7 +458,6 @@ class FoodSaveReservationService {
           'QR code invalide : réessayez.');
     }
 
-    await _confirmCashAtPickup(row, merchantId);
     final fresh = (await _findRow(id))!;
     final dto = (await _toDtos([fresh], viewerId: merchantId)).first;
     final quantite = fresh['quantite_reservee'] as int;
@@ -461,10 +485,15 @@ class FoodSaveReservationService {
           'Merci d\'avoir sauvé ces paniers du gaspillage !',
     );
     final who = dto.clientNom ?? 'votre client';
+    final paidWith = switch (row['mode_paiement']) {
+      'carte_bancaire' => 'par carte bancaire',
+      'portefeuille' => 'par portefeuille',
+      _ => 'en espèces',
+    };
     return ScanResultDto(
       resultat: ScanOutcome.accepte,
-      message: '${cashAtPickup ? 'Encaissez ${formatDinars(row['montant_centimes'] as int)} en espèces, puis r' : 'Retrait validé : r'}'
-          'emettez $quantite × ${fresh['p_titre']} '
+      message: '${collected ? 'Paiement de $montant validé' : 'Panier payé $paidWith'} : '
+          'remettez $quantite × ${fresh['p_titre']} '
           'à $who${who.endsWith('.') ? '' : '.'}',
       reservation: dto,
     );
@@ -935,6 +964,14 @@ class FoodSaveReservationService {
         transactionId == null) {
       return false;
     }
+    if (await _transactionStatus(transactionId) ==
+        TransactionStatus.rembourse) {
+      // Already refunded by the client from the payment module.
+      await ctx.db.update('reservation',
+          {'statut_paiement': TransactionStatus.rembourse.apiValue},
+          where: 'id = ?', whereArgs: [reservationId]);
+      return true;
+    }
     final clientId = row['client_id'] as int;
     String? error;
     try {
@@ -996,6 +1033,57 @@ class FoodSaveReservationService {
         {'statut_paiement': TransactionStatus.echoue.apiValue},
         where: 'id = ? AND statut_paiement = ?',
         whereArgs: [reservationId, TransactionStatus.enAttente.apiValue]);
+  }
+
+  static _PickupPayment _paymentStateOf(Map<String, Object?> row) {
+    final status = (row['t_statut'] ?? row['statut_paiement']) as String?;
+    if (status == TransactionStatus.paye.apiValue) return _PickupPayment.paid;
+    if (status == TransactionStatus.rembourse.apiValue) {
+      return _PickupPayment.refunded;
+    }
+    if (status == TransactionStatus.enAttente.apiValue &&
+        row['mode_paiement'] == PaymentMethodType.especes.apiValue &&
+        row['transaction_id'] != null) {
+      return _PickupPayment.cashToCollect;
+    }
+    return _PickupPayment.unpaid;
+  }
+
+  /// Records the money the merchant just collected at the counter.
+  Future<void> _collectAtPickup(Map<String, Object?> row, int merchantId,
+      _PickupPayment payment) async {
+    final id = row['id'] as int;
+    if (payment == _PickupPayment.cashToCollect) {
+      await _confirmCashAtPickup(row, merchantId);
+      final fresh = (await _findRow(id))!;
+      if (_paymentStateOf(fresh) != _PickupPayment.paid) {
+        throw ApiError.conflict(
+            'Le paiement n\'a pas pu être validé : réessayez.');
+      }
+      return;
+    }
+    // Refunded before pickup: a new payment, handed over at the counter.
+    final tx = await _paymentLock.run(() => ctx.payments.recordCounterPayment(
+          payerId: row['client_id'] as int,
+          beneficiaryId: merchantId,
+          montantCentimes: row['montant_centimes'] as int,
+          typeService: ServiceType.foodSave,
+          idReference: 'FS-RES-$id',
+        ));
+    await ctx.db.update(
+        'reservation',
+        {
+          'transaction_id': tx.id,
+          'statut_paiement': TransactionStatus.paye.apiValue,
+          'mode_paiement': PaymentMethodType.especes.apiValue,
+        },
+        where: 'id = ?',
+        whereArgs: [id]);
+    await ctx.journal.log('paiement_comptoir',
+        utilisateurId: merchantId,
+        panierId: row['panier_id'] as int,
+        reservationId: id,
+        details: {'transaction_id': tx.id, 'raison': 'rembourse_avant_retrait'});
   }
 
   /// Pickup of a cash reservation: the merchant has the cash in hand, so the
@@ -1073,11 +1161,9 @@ class FoodSaveReservationService {
       return 'Ce panier a expiré';
     }
     if ((basket['creneau_retrait_fin'] as String).compareTo(minEndIso) <= 0) {
-      final duree = basket['duree_reservation_minutes'] as int? ??
-          foodSaveDefaultReservationMinutes;
-      return 'Réservations closes : ce panier expire dans moins de '
-          '${FoodSaveRules.reservationLead(duree).inMinutes} minutes '
-          '(durée de réservation)';
+      return 'Le retrait se termine dans moins de '
+          '${foodSaveMinPickupLead.inMinutes} minutes : ce panier ne peut '
+          'plus être réservé';
     }
     if (status == BasketStatus.epuise || available <= 0) {
       return 'Ce panier est épuisé';
@@ -1165,3 +1251,6 @@ class _AsyncLock {
     return result;
   }
 }
+
+/// Payment situation of a reservation at pickup time.
+enum _PickupPayment { paid, cashToCollect, refunded, unpaid }
