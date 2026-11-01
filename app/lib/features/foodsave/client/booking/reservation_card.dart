@@ -36,7 +36,7 @@ class ReservationCard extends StatelessWidget {
     final expiry = r.dateExpirationQr;
     final showCountdown = isActiveReservation(r) &&
         expiry != null &&
-        r.statutPaiement == TransactionStatus.paye;
+        isPaymentSettledForPickup(r);
     return Semantics(
       button: true,
       label: '$title${store == null ? '' : ', ${store.nom}'}, '

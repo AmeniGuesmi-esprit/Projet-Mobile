@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:mailer/mailer.dart';
@@ -104,11 +105,72 @@ class SmtpEmailSender implements EmailSender, ReservationMailer {
   }
 }
 
+/// SMTP mode: always echoes the code in the server terminal first (dev
+/// fallback), then attempts real delivery. A delivery failure is logged but
+/// never propagated — registration must not fail because Gmail is
+/// unreachable or the credentials expired. FoodSave QR e-mails follow the
+/// same rule (console echo, then SMTP).
+class ResilientEmailSender implements EmailSender, ReservationMailer {
+  ResilientEmailSender({required EmailSender primary, required EmailSender fallback})
+      : _primary = primary,
+        _fallback = fallback;
+
+  final EmailSender _primary;
+  final EmailSender _fallback;
+
+  @override
+  Future<void> sendVerificationCode({
+    required String to,
+    required String prenom,
+    required String code,
+  }) async {
+    await _fallback.sendVerificationCode(to: to, prenom: prenom, code: code);
+    try {
+      await _primary.sendVerificationCode(to: to, prenom: prenom, code: code);
+      stdout.writeln('└─ SMTP : e-mail réellement envoyé à $to');
+      developer.log('E-mail de vérification envoyé à $to',
+          name: 'proxilife.email');
+    } on Object catch (e) {
+      stdout.writeln(
+          '└─ SMTP : ÉCHEC d\'envoi à $to — utilisez le code ci-dessus ($e)');
+      developer.log(
+        'Échec d’envoi SMTP à $to : $e',
+        name: 'proxilife.email',
+        level: 900,
+      );
+    }
+  }
+
+  @override
+  Future<void> sendReservationQr(ReservationQrEmail email) async {
+    final fallback = _fallback;
+    if (fallback is ReservationMailer) {
+      await (fallback as ReservationMailer).sendReservationQr(email);
+    }
+    final primary = _primary;
+    if (primary is! ReservationMailer) return;
+    try {
+      await (primary as ReservationMailer).sendReservationQr(email);
+      stdout.writeln('└─ SMTP : QR code réellement envoyé à ${email.to}');
+    } on Object catch (e) {
+      stdout.writeln('└─ SMTP : ÉCHEC d\'envoi du QR code à ${email.to} ($e)');
+      developer.log(
+        'Échec d’envoi SMTP du QR code à ${email.to} : $e',
+        name: 'proxilife.email',
+        level: 900,
+      );
+    }
+  }
+}
+
 EmailSender createEmailSender(ServerConfig config) {
   if (!config.emailConsoleMode &&
       config.smtpUser.isNotEmpty &&
       config.smtpPass.isNotEmpty) {
-    return SmtpEmailSender(config);
+    return ResilientEmailSender(
+      primary: SmtpEmailSender(config),
+      fallback: ConsoleEmailSender(),
+    );
   }
   return ConsoleEmailSender();
 }

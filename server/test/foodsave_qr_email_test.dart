@@ -169,10 +169,64 @@ void main() {
           panierId: basketId,
           quantite: 1,
           moyenPaiementId: methodId);
-      expect(dto.statutPaiement, TransactionStatus.paye);
+      // Cash: pending until the merchant confirms it at pickup.
+      expect(dto.statutPaiement, TransactionStatus.enAttente);
       expect(dto.qrToken, isNotNull);
       await Future<void>.delayed(const Duration(milliseconds: 100));
       expect(mailer.sent, isEmpty);
     });
   });
+
+  group('ResilientEmailSender (SMTP mode)', () {
+    ReservationQrEmail email() => ReservationQrEmail(
+          to: 'client@test.fr',
+          prenom: 'Ameni',
+          reservationId: 7,
+          basketTitle: 'Panier du soir',
+          storeName: 'Boulangerie',
+          storeAddress: 'Tunis',
+          quantity: 1,
+          amountCents: 500,
+          pickupStart: DateTime.utc(2026, 11, 1, 18),
+          pickupEnd: DateTime.utc(2026, 11, 1, 20),
+          qrExpiry: DateTime.utc(2026, 11, 1, 18, 30),
+          qrToken: 'FS1.7.x.y',
+        );
+
+    test('forwards the QR e-mail (console echo, then SMTP)', () async {
+      final primary = _RecordingSender();
+      final fallback = _RecordingSender();
+      final sender =
+          ResilientEmailSender(primary: primary, fallback: fallback);
+      await sender.sendReservationQr(email());
+      expect(fallback.sent.single.reference, 'FS-7');
+      expect(primary.sent.single.reference, 'FS-7');
+    });
+
+    test('an SMTP failure is swallowed', () async {
+      final primary = _RecordingSender()..fail = true;
+      final fallback = _RecordingSender();
+      await ResilientEmailSender(primary: primary, fallback: fallback)
+          .sendReservationQr(email());
+      expect(fallback.sent, hasLength(1));
+    });
+  });
+}
+
+class _RecordingSender implements EmailSender, ReservationMailer {
+  final List<ReservationQrEmail> sent = [];
+  bool fail = false;
+
+  @override
+  Future<void> sendVerificationCode({
+    required String to,
+    required String prenom,
+    required String code,
+  }) async {}
+
+  @override
+  Future<void> sendReservationQr(ReservationQrEmail email) async {
+    if (fail) throw const SocketException('SMTP indisponible');
+    sent.add(email);
+  }
 }

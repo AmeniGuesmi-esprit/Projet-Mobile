@@ -10,7 +10,9 @@ import '../../core/widgets/status_chip.dart';
 import '../../core/widgets/money_text.dart';
 import 'payment_api.dart';
 import 'payment_methods_screen.dart';
+import 'payment_stats_screen.dart';
 import 'transaction_detail_screen.dart';
+import 'widgets/direction_badge.dart';
 
 class TransactionsScreen extends StatefulWidget {
   const TransactionsScreen({super.key, required this.api});
@@ -64,6 +66,19 @@ class TransactionsScreenState extends State<TransactionsScreen> {
                     Expanded(
                       child: Text('Paiements',
                           style: theme.textTheme.headlineMedium),
+                    ),
+                    IconButton(
+                      tooltip: 'Statistiques',
+                      icon: const Icon(Icons.bar_chart,
+                          color: AppColors.primary),
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<PaymentStatsScreen>(
+                            builder: (_) =>
+                                PaymentStatsScreen(api: widget.api),
+                          ),
+                        );
+                      },
                     ),
                     IconButton(
                       tooltip: 'Moyens de paiement',
@@ -202,6 +217,17 @@ class _TransactionTile extends StatelessWidget {
         ? transaction.dateIso
         : '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} '
             '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    final isCredit =
+        transaction.direction == TransactionDirection.credit;
+    final counterparty = isCredit
+        ? (transaction.payeurNom ?? transaction.payeurEmail ?? '—')
+        : (transaction.beneficiaireNom ??
+            transaction.beneficiaireEmail ??
+            '—');
+    final amountStyle = theme.textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.w800,
+      color: isCredit ? AppColors.success : null,
+    );
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -226,20 +252,31 @@ class _TransactionTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    MoneyText(
-                      transaction.montantCentimes,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w800),
+                    Row(
+                      children: [
+                        Text(isCredit ? '+ ' : '− ', style: amountStyle),
+                        MoneyText(
+                          transaction.montantCentimes,
+                          style: amountStyle,
+                        ),
+                      ],
                     ),
                     Text(
-                      '${transaction.beneficiaireNom ?? transaction.beneficiaireEmail ?? '—'} · $formattedDate',
+                      '${isCredit ? 'De' : 'À'} $counterparty · $formattedDate',
                       style: theme.textTheme.bodySmall,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
-              StatusChip(transaction.statut),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  StatusChip(transaction.statut),
+                  const SizedBox(height: 6),
+                  DirectionBadge(transaction.direction),
+                ],
+              ),
             ],
           ),
         ),

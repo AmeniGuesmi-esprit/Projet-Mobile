@@ -137,9 +137,9 @@ class ReservationPaymentChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final r = reservation;
-    final settled = r.statutPaiement == TransactionStatus.paye ||
-        r.statutPaiement == TransactionStatus.rembourse;
-    if (!isCashReservation(r) || !settled) return StatusChip(r.statutPaiement);
+    // Cash: pending until the merchant confirms it at pickup, dropped
+    // (`echoue`) when cancelled / expired — never "Payé" before pickup.
+    if (!isCashReservation(r)) return StatusChip(r.statutPaiement);
     return switch (r.statut) {
       ReservationStatus.enAttente => _TintChip(
           label: cashLabel,

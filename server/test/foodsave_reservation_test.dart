@@ -221,9 +221,12 @@ void main() {
   setUp(() async {
     h = await _Harness.create();
     merchant = await h.merchant('commerce@test.fr');
-    client = await h.user('client@test.fr');
+    // Wallet: paid immediately (cash waits for the merchant, see the
+    // dedicated "cash" group).
+    client = await h.user('client@test.fr', solde: 100000);
     basketId = await h.basket(merchant.id);
-    methodId = await h.method(client.id);
+    methodId =
+        await h.method(client.id, type: PaymentMethodType.portefeuille);
   });
 
   tearDown(() async => h.close());
@@ -237,7 +240,7 @@ void main() {
       expect(dto.statut, ReservationStatus.enAttente);
       expect(dto.statutPaiement, TransactionStatus.paye);
       expect(dto.montantCentimes, 1000);
-      expect(dto.modePaiement, PaymentMethodType.especes);
+      expect(dto.modePaiement, PaymentMethodType.portefeuille);
       expect(dto.qrToken, matches(RegExp(r'^FS1\.\d+\.[\w-]{22}\.[\w-]{43}$')));
       expect(dto.qrToken!.split('.')[1], '${dto.id}');
       expect(dto.panier?.commerce?.nom, 'Boulangerie commerce@test.fr');
@@ -377,6 +380,8 @@ void main() {
 
     test('insufficient wallet → 402, annule, units restored exactly once',
         () async {
+      await h.database.db.update('utilisateur', {'solde_centimes': 0},
+          where: 'id = ?', whereArgs: [client.id]);
       final wallet =
           await h.method(client.id, type: PaymentMethodType.portefeuille);
       final (status, body) =
@@ -416,9 +421,10 @@ void main() {
       final clients = <_User>[];
       final methods = <int>[];
       for (var i = 0; i < 5; i++) {
-        final c = await h.user('c$i@test.fr');
+        final c = await h.user('c$i@test.fr', solde: 10000);
         clients.add(c);
-        methods.add(await h.method(c.id));
+        methods.add(
+            await h.method(c.id, type: PaymentMethodType.portefeuille));
       }
       final results = await Future.wait([
         for (var i = 0; i < 5; i++)
@@ -578,7 +584,7 @@ void main() {
       expect(notifs.single['reservation_id'], first.id);
       expect(notifs.single['message'], contains('Ameni G.'));
       expect(notifs.single['message'], contains('2 × « Panier du soir »'));
-      expect(notifs.single['message'], contains('espèces au retrait'));
+      expect(notifs.single['message'], contains('10,000 DT payés'));
 
       // Client cancels → "Réservation annulée".
       (status, _) = await h.call(
@@ -619,6 +625,72 @@ void main() {
             'nouvelle_reservation',
             'reservation_expiree',
           ]);
+    });
+  });
+
+  group('cash (espèces)', () {
+    late int cash;
+
+    setUp(() async => cash = await h.method(client.id));
+
+    Future<String?> txStatus(int? id) async => (await h.database.db.query(
+            'transaction_',
+            where: 'id = ?',
+            whereArgs: [id]))
+        .first['statut'] as String?;
+
+    test('pending until pickup, confirmed by the merchant at the scan',
+        () async {
+      final (status, body) =
+          await h.reserve(client, basketId, quantite: 2, methodId: cash);
+      expect(status, 201, reason: '$body');
+      final dto = ReservationDto.fromJson(body);
+      expect(dto.modePaiement, PaymentMethodType.especes);
+      expect(dto.statutPaiement, TransactionStatus.enAttente);
+      expect(dto.qrToken, isNotNull); // the client gets its QR
+      expect(await txStatus(dto.transactionId), 'en_attente');
+      expect(await h.soldeOf(merchant.id), 0); // no internal money moved
+      final notif = (await h.database.db.query('foodsave_notification',
+              where: 'utilisateur_id = ?', whereArgs: [merchant.id]))
+          .single;
+      expect(notif['message'], contains('espèces au retrait'));
+
+      // Not cancelled by the "stuck payment" job.
+      _Harness.now = _Harness.now.add(const Duration(minutes: 20));
+      await h.service.expireDue();
+      expect((await h.reservationRow(dto.id))['statut'], 'en_attente');
+
+      // Pickup: the merchant has the cash → transaction confirmed.
+      final (scanStatus, scan) = await h.scan(merchant, dto.qrToken!);
+      expect(scanStatus, 200);
+      expect(ScanResultDto.fromJson(scan).resultat, ScanOutcome.accepte);
+      expect((await h.reservationRow(dto.id))['statut_paiement'], 'paye');
+      expect(await txStatus(dto.transactionId), 'paye');
+      expect(await h.soldeOf(merchant.id), 0); // cash is in hand
+    });
+
+    test('cancelled or expired: the cash order is dropped, no refund',
+        () async {
+      var (status, body) =
+          await h.reserve(client, basketId, quantite: 1, methodId: cash);
+      final first = ReservationDto.fromJson(body);
+      (status, body) = await h.call(
+          'POST', '/foodsave/reservations/${first.id}/cancel',
+          token: client.token);
+      expect(status, 200);
+      expect(body['statut_paiement'], 'echoue');
+      expect(await txStatus(first.transactionId), 'echoue');
+
+      (status, body) =
+          await h.reserve(client, basketId, quantite: 1, methodId: cash);
+      final second = ReservationDto.fromJson(body);
+      _Harness.now = second.dateExpirationQr!.add(const Duration(minutes: 1));
+      expect(await h.service.expireDue(), 1);
+      final row = await h.reservationRow(second.id);
+      expect(row['statut'], 'expire');
+      expect(row['statut_paiement'], 'echoue');
+      expect(await txStatus(second.transactionId), 'echoue');
+      expect((await h.basketRow(basketId))['quantite'], 3);
     });
   });
 
@@ -714,8 +786,10 @@ void main() {
     });
 
     test('cancelActiveForBasket cancels, refunds and notifies', () async {
-      final other = await h.user('second@test.fr', prenom: 'Lina');
-      final otherMethod = await h.method(other.id);
+      final other =
+          await h.user('second@test.fr', prenom: 'Lina', solde: 10000);
+      final otherMethod =
+          await h.method(other.id, type: PaymentMethodType.portefeuille);
       await h.reserve(client, basketId, quantite: 1, methodId: methodId);
       final (_, second) =
           await h.reserve(other, basketId, quantite: 2, methodId: otherMethod);

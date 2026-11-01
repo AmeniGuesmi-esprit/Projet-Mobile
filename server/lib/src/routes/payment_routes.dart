@@ -120,13 +120,17 @@ Router buildPaymentRoutes(PaymentService payments) {
       final body = await readJsonBody(request);
       final statutCible =
           TransactionStatus.parse(body['statut'] as String? ?? '');
-      if (statutCible != TransactionStatus.rembourse) {
-        throw ApiError.badRequest(
-            'Seul le statut rembourse est accepté ici');
-      }
       final role = UserRole.parse(request.userRow['role'] as String);
-      final dto =
-          await payments.refund(int.parse(id), request.userId, role);
+      final dto = switch (statutCible) {
+        // paye = cash receipt confirmation (beneficiary side);
+        // rembourse = refund request (payer side).
+        TransactionStatus.paye =>
+          await payments.confirm(int.parse(id), request.userId, role),
+        TransactionStatus.rembourse =>
+          await payments.refund(int.parse(id), request.userId, role),
+        _ => throw ApiError.badRequest(
+            'Statuts acceptés ici : paye (confirmation) ou rembourse'),
+      };
       return jsonResponse(dto.toJson());
     });
   });

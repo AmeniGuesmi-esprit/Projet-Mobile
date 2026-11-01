@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:proxilife_shared/proxilife_shared.dart';
 
+import '../../core/api/api_client.dart';
 import '../../core/session/session_controller.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/money_text.dart';
+import '../../core/widgets/service_badge.dart';
+import '../../core/widgets/status_chip.dart';
 import '../payment/new_payment_screen.dart';
+import '../payment/payment_api.dart';
 import '../payment/payment_methods_screen.dart';
+import '../payment/transaction_detail_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.session});
@@ -116,13 +122,150 @@ class HomeScreen extends StatelessWidget {
             Text('Paiements',
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.sm),
-            const EmptyState(
-              icon: Icons.receipt_long_outlined,
-              title: 'Aucun paiement pour le moment',
-              message: 'L\'historique arrive avec le module Paiement.',
-              color: AppColors.moduleCompte,
-            ),
+            _RecentTransactions(api: session.api),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The three most recent transactions, loaded once on first display.
+class _RecentTransactions extends StatefulWidget {
+  const _RecentTransactions({required this.api});
+
+  final ApiClient api;
+
+  @override
+  State<_RecentTransactions> createState() => _RecentTransactionsState();
+}
+
+class _RecentTransactionsState extends State<_RecentTransactions> {
+  late Future<List<TransactionDto>> _future = _load();
+
+  Future<List<TransactionDto>> _load() =>
+      PaymentApi(widget.api).listTransactions();
+
+  void _reload() => setState(() => _future = _load());
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return FutureBuilder<List<TransactionDto>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(AppSpacing.lg),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: OutlinedButton.icon(
+              onPressed: _reload,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Réessayer'),
+            ),
+          );
+        }
+        final items = snapshot.data ?? const [];
+        if (items.isEmpty) {
+          return const EmptyState(
+            icon: Icons.receipt_long_outlined,
+            title: 'Aucun paiement pour le moment',
+            message: 'Vos derniers paiements apparaîtront ici.',
+            color: AppColors.moduleCompte,
+          );
+        }
+        final recent = items.take(3).toList();
+        return Column(
+          children: [
+            for (final t in recent)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: _RecentTile(
+                  transaction: t,
+                  onTap: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute<TransactionDetailScreen>(
+                        builder: (_) => TransactionDetailScreen(
+                          transaction: t,
+                          api: widget.api,
+                        ),
+                      ),
+                    );
+                    _reload();
+                  },
+                ),
+              ),
+            if (items.length > 3)
+              Text(
+                '… et ${items.length - 3} autre${items.length - 3 > 1 ? 's' : ''} dans l\'onglet Paiements',
+                style: theme.textTheme.bodySmall,
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _RecentTile extends StatelessWidget {
+  const _RecentTile({required this.transaction, required this.onTap});
+
+  final TransactionDto transaction;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isCredit =
+        transaction.direction == TransactionDirection.credit;
+    final counterparty = isCredit
+        ? (transaction.payeurNom ?? transaction.payeurEmail ?? '—')
+        : (transaction.beneficiaireNom ??
+            transaction.beneficiaireEmail ??
+            '—');
+    final amountStyle = theme.textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.w800,
+      color: isCredit ? AppColors.success : null,
+    );
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            children: [
+              ServiceBadge(transaction.typeService, compact: true),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(isCredit ? '+ ' : '− ',
+                            style: amountStyle),
+                        MoneyText(
+                          transaction.montantCentimes,
+                          style: amountStyle,
+                        ),
+                      ],
+                    ),
+                    Text(
+                      '${isCredit ? 'De' : 'À'} $counterparty',
+                      style: theme.textTheme.bodySmall,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              StatusChip(transaction.statut),
+            ],
+          ),
         ),
       ),
     );

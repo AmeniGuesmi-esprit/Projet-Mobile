@@ -94,6 +94,13 @@ bool isActiveReservation(ReservationDto r) =>
 /// Visual phase of a reservation on the QR screen at [now].
 enum QrPhase { active, awaitingPayment, expired, pickedUp, cancelled }
 
+/// The QR can be shown: paid, or cash to be paid at pickup (the payment
+/// module keeps cash `en_attente` until the merchant confirms receipt).
+bool isPaymentSettledForPickup(ReservationDto r) =>
+    r.statutPaiement == TransactionStatus.paye ||
+    (r.modePaiement == PaymentMethodType.especes &&
+        r.statutPaiement == TransactionStatus.enAttente);
+
 QrPhase qrPhaseOf(ReservationDto r, DateTime now) {
   switch (r.statut) {
     case ReservationStatus.retire:
@@ -105,7 +112,7 @@ QrPhase qrPhaseOf(ReservationDto r, DateTime now) {
     case ReservationStatus.enAttente:
       final expiry = r.dateExpirationQr;
       if (expiry != null && !now.isBefore(expiry)) return QrPhase.expired;
-      if (r.qrToken == null || r.statutPaiement != TransactionStatus.paye) {
+      if (r.qrToken == null || !isPaymentSettledForPickup(r)) {
         return QrPhase.awaitingPayment;
       }
       return QrPhase.active;

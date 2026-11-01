@@ -168,7 +168,13 @@ class FoodSaveReservationService {
           'Aucun montant n\'a été débité, réessayez plus tard.';
     }
 
-    final paid = payment != null && await _transactionIsPaid(payment.id);
+    // Card / wallet must be paid now. Cash (payment module rule) stays
+    // `en_attente` until the merchant confirms receipt at pickup.
+    final txStatus =
+        payment == null ? null : await _transactionStatus(payment.id);
+    final cashPending = txStatus == TransactionStatus.enAttente &&
+        method['type'] == PaymentMethodType.especes.apiValue;
+    final paid = txStatus == TransactionStatus.paye || cashPending;
     if (!paid) {
       if (payment != null) {
         failure ??= method['type'] == PaymentMethodType.portefeuille.apiValue
@@ -196,7 +202,8 @@ class FoodSaveReservationService {
     }
 
     // 3) Payment confirmed → QR code.
-    final confirmed = await _confirmPayment(reservationId, payment.id);
+    final confirmed = await _confirmPayment(reservationId, payment!.id,
+        cashPending: cashPending);
     if (!confirmed) {
       throw ApiError.conflict(
           'Le panier a été annulé pendant votre paiement. '
@@ -380,7 +387,12 @@ class FoodSaveReservationService {
       return _refuse(merchantId, id, terminal.$1, terminal.$2,
           row: row);
     }
-    if (row['statut_paiement'] != TransactionStatus.paye.apiValue) {
+    // Cash is collected right now, at the counter (confirmed after the scan).
+    final cashAtPickup =
+        row['mode_paiement'] == PaymentMethodType.especes.apiValue &&
+            row['statut_paiement'] == TransactionStatus.enAttente.apiValue;
+    if (row['statut_paiement'] != TransactionStatus.paye.apiValue &&
+        !cashAtPickup) {
       return _refuse(merchantId, id, ScanOutcome.paiementNonConfirme,
           'Paiement non confirmé : ne remettez pas le panier.',
           row: row);
@@ -421,6 +433,7 @@ class FoodSaveReservationService {
           'QR code invalide : réessayez.');
     }
 
+    await _confirmCashAtPickup(row, merchantId);
     final fresh = (await _findRow(id))!;
     final dto = (await _toDtos([fresh], viewerId: merchantId)).first;
     final quantite = fresh['quantite_reservee'] as int;
@@ -450,7 +463,8 @@ class FoodSaveReservationService {
     final who = dto.clientNom ?? 'votre client';
     return ScanResultDto(
       resultat: ScanOutcome.accepte,
-      message: 'Retrait validé : remettez $quantite × ${fresh['p_titre']} '
+      message: '${cashAtPickup ? 'Encaissez ${formatDinars(row['montant_centimes'] as int)} en espèces, puis r' : 'Retrait validé : r'}'
+          'emettez $quantite × ${fresh['p_titre']} '
           'à $who${who.endsWith('.') ? '' : '.'}',
       reservation: dto,
     );
@@ -575,6 +589,7 @@ class FoodSaveReservationService {
     final released = await _release(id, ReservationStatus.expire,
         onlyIfQrExpired: true, reason: 'qr_expire');
     if (!released) return false;
+    await _cancelPendingCash(id);
     await ctx.journal.log('reservation_expiree',
         utilisateurId: row['client_id'] as int,
         panierId: row['panier_id'] as int,
@@ -609,7 +624,9 @@ class FoodSaveReservationService {
         ctx.now().subtract(stalePaymentDelay).toIso8601String();
     final rows = await ctx.db.query('reservation',
         columns: ['id', 'client_id'],
-        where: 'statut = ? AND statut_paiement = ? AND cree_le <= ?',
+        // Cash reservations wait for pickup with a QR: not stale.
+        where: 'statut = ? AND statut_paiement = ? AND cree_le <= ? '
+            'AND date_creation_qr IS NULL',
         whereArgs: [
           ReservationStatus.enAttente.apiValue,
           TransactionStatus.enAttente.apiValue,
@@ -623,8 +640,19 @@ class FoodSaveReservationService {
           whereArgs: ['FS-RES-$id', ServiceType.foodSave.apiValue],
           orderBy: 'id DESC',
           limit: 1);
-      if (tx.isNotEmpty && tx.first['statut'] == TransactionStatus.paye.apiValue) {
+      final status = tx.isEmpty
+          ? null
+          : TransactionStatus.parse(tx.first['statut'] as String);
+      if (status == TransactionStatus.paye) {
         await _confirmPayment(id, tx.first['id'] as int);
+      } else if (status == TransactionStatus.enAttente &&
+          (await ctx.db.query('reservation',
+                  columns: ['mode_paiement'],
+                  where: 'id = ?',
+                  whereArgs: [id]))
+                  .first['mode_paiement'] ==
+              PaymentMethodType.especes.apiValue) {
+        await _confirmPayment(id, tx.first['id'] as int, cashPending: true);
       } else {
         await _release(id, ReservationStatus.annule,
             set: {
@@ -705,7 +733,11 @@ class FoodSaveReservationService {
 
   /// Marks the reservation paid and issues its QR code. Returns false when
   /// the reservation was cancelled meanwhile (the payment is then refunded).
-  Future<bool> _confirmPayment(int reservationId, int transactionId) async {
+  ///
+  /// [cashPending]: cash payment awaiting the merchant's confirmation at
+  /// pickup — the reservation keeps `statut_paiement = en_attente`.
+  Future<bool> _confirmPayment(int reservationId, int transactionId,
+      {bool cashPending = false}) async {
     final row = (await _findRow(reservationId))!;
     final now = ctx.now();
     final expiry = FoodSaveRules.qrExpiry(
@@ -720,7 +752,9 @@ class FoodSaveReservationService {
     final updated = await ctx.db.update(
       'reservation',
       {
-        'statut_paiement': TransactionStatus.paye.apiValue,
+        'statut_paiement': cashPending
+            ? TransactionStatus.enAttente.apiValue
+            : TransactionStatus.paye.apiValue,
         'transaction_id': transactionId,
         'qr_nonce': FoodSaveQrTokenService.newNonce(),
         'date_creation_qr': now.toIso8601String(),
@@ -736,6 +770,13 @@ class FoodSaveReservationService {
     final clientId = row['client_id'] as int;
     final panierId = row['panier_id'] as int;
     if (updated != 1) {
+      if (cashPending) {
+        // Cancelled while reserving: nothing was paid, drop the cash order.
+        await ctx.db.update('reservation', {'transaction_id': transactionId},
+            where: 'id = ?', whereArgs: [reservationId]);
+        await _cancelPendingCash(reservationId);
+        return false;
+      }
       // Cancelled while paying: record the payment, then give it back.
       await ctx.db.update(
         'reservation',
@@ -884,6 +925,12 @@ class FoodSaveReservationService {
     if (rows.isEmpty) return false;
     final row = rows.first;
     final transactionId = row['transaction_id'] as int?;
+    if (row['statut_paiement'] == TransactionStatus.enAttente.apiValue &&
+        row['mode_paiement'] == PaymentMethodType.especes.apiValue) {
+      // Cash never collected: nothing to refund, just cancel the order.
+      await _cancelPendingCash(reservationId);
+      return false;
+    }
     if (row['statut_paiement'] != TransactionStatus.paye.apiValue ||
         transactionId == null) {
       return false;
@@ -919,11 +966,69 @@ class FoodSaveReservationService {
     return true;
   }
 
-  Future<bool> _transactionIsPaid(int transactionId) async {
+  Future<TransactionStatus?> _transactionStatus(int transactionId) async {
     final rows = await ctx.db.query('transaction_',
         columns: ['statut'], where: 'id = ?', whereArgs: [transactionId]);
-    return rows.isNotEmpty &&
-        rows.first['statut'] == TransactionStatus.paye.apiValue;
+    return rows.isEmpty
+        ? null
+        : TransactionStatus.parse(rows.first['statut'] as String);
+  }
+
+  /// Cash reservation cancelled / expired before pickup: its pending cash
+  /// transaction becomes `echoue` (allowed by [TransactionRules]; kept for
+  /// history instead of being deleted).
+  Future<void> _cancelPendingCash(int reservationId) async {
+    final rows = await ctx.db.query('reservation',
+        columns: ['transaction_id', 'statut_paiement'],
+        where: 'id = ?',
+        whereArgs: [reservationId]);
+    if (rows.isEmpty) return;
+    final transactionId = rows.first['transaction_id'] as int?;
+    if (transactionId != null &&
+        await _transactionStatus(transactionId) ==
+            TransactionStatus.enAttente &&
+        TransactionRules.canTransition(
+            TransactionStatus.enAttente, TransactionStatus.echoue)) {
+      await ctx.payments.transactions
+          .updateStatus(transactionId, TransactionStatus.echoue);
+    }
+    await ctx.db.update('reservation',
+        {'statut_paiement': TransactionStatus.echoue.apiValue},
+        where: 'id = ? AND statut_paiement = ?',
+        whereArgs: [reservationId, TransactionStatus.enAttente.apiValue]);
+  }
+
+  /// Pickup of a cash reservation: the merchant has the cash in hand, so the
+  /// pending transaction is confirmed (`en_attente -> paye`, payment module).
+  Future<void> _confirmCashAtPickup(
+      Map<String, Object?> row, int merchantId) async {
+    if (row['mode_paiement'] != PaymentMethodType.especes.apiValue ||
+        row['statut_paiement'] != TransactionStatus.enAttente.apiValue) {
+      return;
+    }
+    final transactionId = row['transaction_id'] as int?;
+    if (transactionId == null) return;
+    final id = row['id'] as int;
+    try {
+      await _paymentLock.run(() => ctx.payments
+          .confirm(transactionId, merchantId, UserRole.commercant));
+      await ctx.db.update('reservation',
+          {'statut_paiement': TransactionStatus.paye.apiValue},
+          where: 'id = ?', whereArgs: [id]);
+      await ctx.journal.log('especes_encaissees',
+          utilisateurId: merchantId,
+          panierId: row['panier_id'] as int,
+          reservationId: id,
+          details: {'transaction_id': transactionId});
+    } catch (e, st) {
+      developer.log('cash confirmation failed',
+          error: e, stackTrace: st, name: 'foodsave');
+      await ctx.journal.log('especes_a_confirmer',
+          utilisateurId: merchantId,
+          panierId: row['panier_id'] as int,
+          reservationId: id,
+          details: {'transaction_id': transactionId, 'raison': '$e'});
+    }
   }
 
   Future<Map<String, Object?>> _resolveMethod(
@@ -1026,10 +1131,15 @@ class FoodSaveReservationService {
       final isOwner = row['client_id'] == viewerId;
       final isMerchant = row['p_commercant_id'] == viewerId;
       final nonce = row['qr_nonce'] as String?;
+      // Paid, or cash to be paid at pickup (pending until the merchant
+      // confirms receipt).
+      final settled = row['statut_paiement'] == TransactionStatus.paye.apiValue ||
+          (row['statut_paiement'] == TransactionStatus.enAttente.apiValue &&
+              row['mode_paiement'] == PaymentMethodType.especes.apiValue);
       final showQr = isOwner &&
           nonce != null &&
           row['statut'] == ReservationStatus.enAttente.apiValue &&
-          row['statut_paiement'] == TransactionStatus.paye.apiValue;
+          settled;
       result.add(reservationFromRow(
         row,
         panier: basketById[row['panier_id'] as int],

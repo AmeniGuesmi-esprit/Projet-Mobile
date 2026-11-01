@@ -77,6 +77,13 @@ class PaymentApi {
     return TransactionDto.fromJson(data);
   }
 
+  /// Confirms receipt of a pending cash payment (beneficiary side).
+  Future<TransactionDto> confirmTransaction(int id) async {
+    final data = await _client
+        .patchJson('/transactions/$id/status', {'statut': 'paye'});
+    return TransactionDto.fromJson(data);
+  }
+
   Future<void> cancel(int id) => _client.deleteJson('/transactions/$id');
 }
 

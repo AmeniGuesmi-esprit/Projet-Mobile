@@ -374,8 +374,7 @@ class QrStatePanel extends StatelessWidget {
           Icons.block,
           AppColors.error,
           'Réservation annulée',
-          isCashReservation(reservation) &&
-                  reservation.statutPaiement != TransactionStatus.echoue
+          isCashReservation(reservation)
               ? 'Aucun montant n\'est à régler.'
               : switch (reservation.statutPaiement) {
                   TransactionStatus.rembourse => 'Vous avez été remboursé.',
