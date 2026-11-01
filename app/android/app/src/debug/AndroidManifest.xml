@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The Flutter tool needs cleartext for hot reload. The local ProxiLife
+         server also speaks plain HTTP in debug (emulator -> 10.0.2.2). -->
+    <application android:usesCleartextTraffic="true"/>
+</manifest>

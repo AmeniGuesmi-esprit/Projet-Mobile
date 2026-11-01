@@ -1,0 +1,41 @@
+name: proxilife
+description: ProxiLife — services de proximité, compte et paiement unifiés.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.6.0
+  shared_preferences: ^2.5.6
+  flutter_secure_storage: ^11.2.0
+  local_auth: ^3.0.2
+  image_picker: ^1.2.4
+  flutter_local_notifications: ^22.3.1
+  intl: ^0.20.3
+  # FoodSave: GPS, QR display/scan, interactive map (OpenStreetMap tiles).
+  geolocator: ^14.1.1
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.4.2
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
+  proxilife_shared:
+    path: ../packages/proxilife_shared
+  url_launcher: ^6.3.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-VF.ttf
