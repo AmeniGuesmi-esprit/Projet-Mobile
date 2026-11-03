@@ -7,7 +7,7 @@ environment:
   sdk: ">=3.5.0 <4.0.0"
 
 dependencies:
-  crypto: ^3.0.7
+  crypto: ^3.0.8
   mailer: ^7.2.0
   path: ^1.9.1
   proxilife_shared:
