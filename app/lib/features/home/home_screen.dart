@@ -72,7 +72,7 @@ class HomeScreen extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   Text(
                     user?.role.requiresRib == true
-                        ? 'Revenus versés sur votre RIB'
+                        ? 'Revenus versÃ©s sur votre RIB'
                         : 'Portefeuille ProxiLife',
                     style: Theme.of(context)
                         .textTheme

@@ -48,7 +48,7 @@ Future<void> main(List<String> args) async {
 
   final server = await shelf_io.serve(
     handler,
-    InternetAddress.loopbackIPv4,
+    InternetAddress.anyIPv4,
     config.port,
   );
   stdout.writeln(

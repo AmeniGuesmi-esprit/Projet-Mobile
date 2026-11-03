@@ -1,9 +1,14 @@
 export 'src/dto/payment_method_dto.dart';
+export 'src/dto/reservation_dto.dart';
 export 'src/dto/transaction_dto.dart';
+export 'src/dto/trip_dto.dart';
 export 'src/dto/user_dto.dart';
+export 'src/dto/vehicle_dto.dart';
 export 'src/enums.dart';
 export 'src/foodsave/foodsave_dto.dart';
 export 'src/foodsave/foodsave_enums.dart';
 export 'src/foodsave/foodsave_rules.dart';
 export 'src/transaction_rules.dart';
+export 'src/trip_enums.dart';
+export 'src/trip_rules.dart';
 export 'src/validators.dart';

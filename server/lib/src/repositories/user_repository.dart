@@ -54,6 +54,8 @@ class UserRepository {
     String? rib,
     bool clearPhoto = false,
     bool clearRib = false,
+    String? sexe,
+    bool clearSexe = false,
   }) async {
     final values = <String, Object?>{};
     if (nom != null) values['nom'] = nom;
@@ -63,6 +65,8 @@ class UserRepository {
     if (clearPhoto) values['photo'] = null;
     if (rib != null) values['rib'] = normalizeRib(rib);
     if (clearRib) values['rib'] = null;
+    if (sexe != null) values['sexe'] = sexe;
+    if (clearSexe) values['sexe'] = null;
     if (values.isEmpty) return;
     await _db.update('utilisateur', values, where: 'id = ?', whereArgs: [id]);
   }

@@ -17,15 +17,18 @@ dependencies:
   image_picker: ^1.2.4
   flutter_local_notifications: ^22.3.1
   intl: ^0.20.3
-  # FoodSave: GPS, QR display/scan, interactive map (OpenStreetMap tiles).
+  # FoodSave: GPS, QR display/scan, interactive map (OpenStreetMap tiles)
   geolocator: ^14.1.1
   qr_flutter: ^4.1.0
-  mobile_scanner: ^7.4.2
+  mobile_scanner: ^7.4.3
   flutter_map: ^8.3.2
   latlong2: ^0.10.1
   proxilife_shared:
     path: ../packages/proxilife_shared
   url_launcher: ^6.3.3
+  # Covoiturage: embarquement par Bluetooth
+  flutter_blue_plus: ^2.3.14
+  flutter_ble_peripheral: ^3.1.0
 
 dev_dependencies:
   flutter_test:

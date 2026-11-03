@@ -59,3 +59,5 @@ desktop.ini
 
 # FoodSave basket photos (server runtime data)
 server/uploads/
+
+*.db.old

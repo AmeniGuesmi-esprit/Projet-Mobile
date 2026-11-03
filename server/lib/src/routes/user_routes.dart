@@ -32,6 +32,8 @@ Router buildUserRoutes(UserRepository users, AuthService auth) {
       final telephone = body['telephone'] as String?;
       final photo = body['photo'] as String?;
       final rib = body['rib'] as String?;
+      final sexe = body['sexe'] as String?;
+      final clearSexe = body['sexe'] == null && body.containsKey('sexe');
       final clearPhoto = body['photo'] == null && body.containsKey('photo');
       final clearRib = body['rib'] == null && body.containsKey('rib');
 
@@ -47,6 +49,9 @@ Router buildUserRoutes(UserRepository users, AuthService auth) {
       }
       if (rib != null && rib.isNotEmpty && !isValidRib(rib)) {
         throw ApiError.badRequest('RIB invalide (vérifiez la clé)');
+      }
+      if (sexe != null && sexe != 'homme' && sexe != 'femme') {
+        throw ApiError.badRequest('Sexe invalide (homme ou femme)');
       }
       if (photo != null) {
         // Photos are base64 JPEG, capped at ~500 KB on the wire.
@@ -78,6 +83,8 @@ Router buildUserRoutes(UserRepository users, AuthService auth) {
         rib: (rib == null || rib.isEmpty) ? null : rib,
         clearPhoto: clearPhoto,
         clearRib: clearRib && !role.requiresRib,
+        sexe: sexe,
+        clearSexe: clearSexe,
       );
 
       final updated = await users.findById(request.userId);
