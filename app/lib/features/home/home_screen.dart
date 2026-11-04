@@ -14,12 +14,46 @@ import '../payment/payment_api.dart';
 import '../payment/payment_methods_screen.dart';
 import '../payment/transaction_detail_screen.dart';
 import '../teledoc/presentation/widgets/teledoc_entry_card.dart';
+import 'service_entry_card.dart';
 import '../../core/live/live_refresh.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, required this.session});
+  const HomeScreen({super.key, required this.session, this.onOpenTab});
 
   final SessionController session;
+
+  /// Switches the bottom bar to a tab ('foodsave', 'covoiturage').
+  final ValueChanged<String>? onOpenTab;
+
+  /// FoodSave then EcoRoute shortcuts (TeleDoc follows), worded per role.
+  List<Widget> _serviceCards(UserRole? role) {
+    final open = onOpenTab;
+    if (role == null || open == null) return const [];
+    final merchant = role == UserRole.commercant;
+    final driver = role == UserRole.conducteur;
+    return [
+      ServiceEntryCard(
+        type: ServiceType.foodSave,
+        icon: Icons.restaurant_outlined,
+        title: merchant
+            ? 'Gérer vos paniers anti-gaspi'
+            : 'Paniers anti-gaspi près de vous',
+        subtitle: merchant
+            ? 'Publiez vos invendus, suivez les réservations'
+            : 'Des invendus à petit prix chez vos commerçants',
+        onTap: () => open('foodsave'),
+      ),
+      ServiceEntryCard(
+        type: ServiceType.ecoRoute,
+        icon: Icons.directions_car_outlined,
+        title: driver ? 'Vos trajets en covoiturage' : 'Trouver un covoiturage',
+        subtitle: driver
+            ? 'Publiez un trajet, acceptez les passagers'
+            : 'Partagez la route et les frais',
+        onTap: () => open('covoiturage'),
+      ),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,22 +86,23 @@ class HomeScreen extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text('Solde disponible',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: Colors.white70)),
+                      Text(
+                        'Solde disponible',
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: Colors.white70),
+                      ),
                       const Spacer(),
-                      const Icon(Icons.account_balance_wallet_outlined,
-                          color: Colors.white70, size: 20),
+                      const Icon(
+                        Icons.account_balance_wallet_outlined,
+                        color: Colors.white70,
+                        size: 20,
+                      ),
                     ],
                   ),
                   const SizedBox(height: AppSpacing.xxs),
                   MoneyText(
                     user?.soldeCentimes ?? 0,
-                    style: Theme.of(context)
-                        .textTheme
-                        .displaySmall
+                    style: Theme.of(context).textTheme.displaySmall
                         ?.copyWith(color: Colors.white),
                   ),
                   const SizedBox(height: AppSpacing.sm),
@@ -75,9 +110,7 @@ class HomeScreen extends StatelessWidget {
                     user?.role.requiresRib == true
                         ? 'Revenus versÃ©s sur votre RIB'
                         : 'Portefeuille ProxiLife',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
+                    style: Theme.of(context).textTheme.bodySmall
                         ?.copyWith(color: Colors.white70),
                   ),
                 ],
@@ -94,8 +127,7 @@ class HomeScreen extends StatelessWidget {
                     onTap: () async {
                       await Navigator.of(context).push(
                         MaterialPageRoute<bool>(
-                          builder: (_) =>
-                              NewPaymentScreen(session: session),
+                          builder: (_) => NewPaymentScreen(session: session),
                         ),
                       );
                       await session.refreshUser();
@@ -121,13 +153,15 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: AppSpacing.xl),
+            ..._serviceCards(user?.role),
             TeledocEntryCard(session: session),
             const SizedBox(height: AppSpacing.xl),
-            Text('Paiements',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text('Paiements', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.sm),
             _RecentTransactions(
-                api: session.api, refreshUser: session.refreshUser),
+              api: session.api,
+              refreshUser: session.refreshUser,
+            ),
           ],
         ),
       ),
@@ -166,8 +200,8 @@ class _RecentTransactionsState extends State<_RecentTransactions>
       PaymentApi(widget.api).listTransactions();
 
   void _reload() => setState(() {
-      _future = _load();
-    });
+    _future = _load();
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -241,13 +275,10 @@ class _RecentTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isCredit =
-        transaction.direction == TransactionDirection.credit;
+    final isCredit = transaction.direction == TransactionDirection.credit;
     final counterparty = isCredit
         ? (transaction.payeurNom ?? transaction.payeurEmail ?? '—')
-        : (transaction.beneficiaireNom ??
-            transaction.beneficiaireEmail ??
-            '—');
+        : (transaction.beneficiaireNom ?? transaction.beneficiaireEmail ?? '—');
     final amountStyle = theme.textTheme.titleMedium?.copyWith(
       fontWeight: FontWeight.w800,
       color: isCredit ? AppColors.success : null,
@@ -268,8 +299,7 @@ class _RecentTile extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Text(isCredit ? '+ ' : '− ',
-                            style: amountStyle),
+                        Text(isCredit ? '+ ' : '− ', style: amountStyle),
                         MoneyText(
                           transaction.montantCentimes,
                           style: amountStyle,
@@ -321,7 +351,9 @@ class _QuickAction extends StatelessWidget {
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(
-                vertical: AppSpacing.md, horizontal: AppSpacing.sm),
+              vertical: AppSpacing.md,
+              horizontal: AppSpacing.sm,
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [

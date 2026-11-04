@@ -109,11 +109,11 @@ void main() {
       final (status, _) = await server.call('POST', '/teledoc/requests',
           body: validRequestBody(), token: doctor);
       expect(status, 403);
+      // Every non-doctor role consults as a patient (like FoodSave).
       final (_, conducteur) = await server.user('c@test.tn', 'conducteur');
       final (status2, body2) = await server.call('POST', '/teledoc/requests',
           body: validRequestBody(), token: conducteur);
-      expect(status2, 403);
-      expect(body2['error'], contains('réservé aux patients et aux médecins'));
+      expect(status2, inInclusiveRange(200, 201), reason: '$body2');
     });
 
     test('sans jeton : 401', () async {

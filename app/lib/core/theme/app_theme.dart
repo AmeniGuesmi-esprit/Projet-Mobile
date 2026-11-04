@@ -123,9 +123,12 @@ class AppTheme {
         backgroundColor: AppColors.surface,
         indicatorColor: AppColors.primary.withValues(alpha: 0.12),
         labelTextStyle: WidgetStateProperty.resolveWith(
+          // 11 sp with tight spacing: six tabs (Accueil … Profil) fit on a
+          // 360 dp phone without "Paiements" wrapping.
           (states) => TextStyle(
             fontFamily: 'Inter',
-            fontSize: 12,
+            fontSize: 11,
+            letterSpacing: -0.2,
             fontWeight: states.contains(WidgetState.selected)
                 ? FontWeight.w600
                 : FontWeight.w400,

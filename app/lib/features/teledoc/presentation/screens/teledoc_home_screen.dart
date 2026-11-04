@@ -10,8 +10,8 @@ import 'doctor/teledoc_doctor_home_screen.dart';
 import 'patient/teledoc_patient_home_screen.dart';
 import '../teledoc_theme.dart';
 
-/// Entry of the TeleDoc module: routes to the patient or the doctor space
-/// according to the connected user's role.
+/// Entry of the TeleDoc module: doctors get their space; every other role
+/// consults as a patient (like FoodSave's client side).
 class TeledocHomeScreen extends StatelessWidget {
   const TeledocHomeScreen({super.key, required this.session, this.repository});
 
@@ -25,21 +25,19 @@ class TeledocHomeScreen extends StatelessWidget {
     final repo = repository ?? TeledocApiRepository(session.api);
     return TeledocThemed(
       child: switch (session.user?.role) {
-        UserRole.client => TeledocPatientHomeScreen(
-          session: session,
-          repository: repo,
-        ),
         UserRole.medecin => TeledocDoctorHomeScreen(repository: repo),
-        _ => Scaffold(
+        null => Scaffold(
           appBar: AppBar(title: const Text('TeleDoc Express')),
           body: const EmptyState(
             icon: Icons.medical_services_outlined,
-            title: 'Réservé aux patients et aux médecins',
-            message:
-                'Connectez-vous avec un compte client ou médecin pour '
-                'utiliser la téléconsultation.',
+            title: 'Connexion requise',
+            message: 'Connectez-vous pour utiliser la téléconsultation.',
             color: AppColors.moduleTeleDoc,
           ),
+        ),
+        _ => TeledocPatientHomeScreen(
+          session: session,
+          repository: repo,
         ),
       },
     );

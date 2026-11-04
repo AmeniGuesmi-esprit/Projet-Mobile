@@ -11,16 +11,15 @@ import 'teledoc_payment_gateway.dart';
 import 'teledoc_photo_store.dart';
 import 'teledoc_queue_service.dart';
 
-/// The authenticated caller, as seen by TeleDoc: patients are `client`
-/// accounts, doctors `medecin` accounts. Any other role is refused.
+/// The authenticated caller, as seen by TeleDoc: doctors are `medecin`
+/// accounts; every other role (client, conducteur, commerçant, coach,
+/// admin) consults as a patient, like FoodSave's client side.
 class TeledocUser {
   const TeledocUser(this.id, this.actor);
 
   factory TeledocUser.fromRole(int id, UserRole role) => switch (role) {
-        UserRole.client => TeledocUser(id, TeledocActor.patient),
         UserRole.medecin => TeledocUser(id, TeledocActor.medecin),
-        _ => throw ApiError.forbidden(
-            'TeleDoc Express est réservé aux patients et aux médecins'),
+        _ => TeledocUser(id, TeledocActor.patient),
       };
 
   final int id;

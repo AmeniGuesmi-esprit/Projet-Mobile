@@ -9,7 +9,8 @@ import '../screens/teledoc_home_screen.dart';
 import '../teledoc_theme.dart';
 
 /// "TeleDoc Express" entry point on the home screen (single line in
-/// `features/home/home_screen.dart`). Only shown to patients and doctors.
+/// `features/home/home_screen.dart`). Doctors see their queue; every other
+/// role consults as a patient.
 /// The module colour is always paired with the TeleDoc badge + label.
 class TeledocEntryCard extends StatelessWidget {
   const TeledocEntryCard({super.key, required this.session});
@@ -19,9 +20,7 @@ class TeledocEntryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final role = session.user?.role;
-    if (role != UserRole.client && role != UserRole.medecin) {
-      return const SizedBox.shrink();
-    }
+    if (role == null) return const SizedBox.shrink();
     final isDoctor = role == UserRole.medecin;
     final theme = Theme.of(context);
     return Padding(
