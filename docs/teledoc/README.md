@@ -107,7 +107,7 @@ cd ../app && flutter analyze && flutter test
 | M5 | Ouvrir l'appel après la fin de la consultation | Plus de bouton : la salle n'est plus distribuée. |
 | M6 | Pharmacies avec la localisation refusée | Liste depuis Tunis centre, bandeau et bouton « Réglages ». |
 | M7 | Police système au maximum (Réglages › Affichage) | Aucun texte coupé ni débordement sur les écrans TeleDoc. |
-| M8 | Supprimer un compte patient, puis redémarrer le serveur au moins 1 h plus tard | Le journal indique « N photo(s) orpheline(s) supprimée(s) ». |
+| M8 | Supprimer un compte patient, puis au moins 1 h plus tard lancer `dart run bin/teledoc_purge.dart` | La commande indique « N photo(s) orpheline(s) supprimée(s) ». |
 
 ## 6. Architecture
 
@@ -135,7 +135,7 @@ flowchart LR
 ```
 
 - **Une seule source de vérité** : les règles (transitions, tri de la file, validateurs) sont dans `proxilife_shared`, utilisées par le serveur pour décider et par l'app pour afficher.
-- **Fichiers partagés modifiés** (une ligne d'appel chacun) : `app.dart` (montage des routes), `database.dart` (version et migration), `bin/seed.dart`, `bin/server.dart` (nettoyage), `home_screen.dart` (carte d'entrée), `pubspec.yaml` et `AndroidManifest.xml` (dépendances et permissions de localisation, identiques à FoodSave), `.gitignore`.
+- **Fichiers partagés modifiés** (une ligne d'appel chacun) : `app.dart` (montage des routes), `database.dart` (version et migration), `bin/seed.dart`, `home_screen.dart` (carte d'entrée), `pubspec.yaml` et `AndroidManifest.xml` (dépendances et permissions de localisation, identiques à FoodSave), `.gitignore`.
 
 ## 7. Limites connues et points à remonter à l'équipe
 

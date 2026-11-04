@@ -43,9 +43,9 @@ Router buildTeledocModule(
   ));
 }
 
-/// Startup maintenance, called once by `bin/server.dart` (never by tests:
-/// they use other databases with the same uploads directory). Returns a
-/// line for the server log.
+/// Maintenance, run on purpose by `bin/teledoc_purge.dart` (never at
+/// startup nor by tests): the uploads directory must belong to [db], or the
+/// photos of another database would be seen as orphans. Returns a log line.
 Future<String> purgeTeledocOrphanPhotos(
   Database db, {
   String uploadsDir = 'uploads/teledoc',

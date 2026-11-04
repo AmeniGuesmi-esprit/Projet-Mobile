@@ -11,7 +11,6 @@ import 'package:proxilife_server/src/foodsave/services/route_planner.dart';
 import 'package:proxilife_server/src/repositories/payment_method_repository.dart';
 import 'package:proxilife_server/src/repositories/transaction_repository.dart';
 import 'package:proxilife_server/src/repositories/user_repository.dart';
-import 'package:proxilife_server/src/routes/teledoc_routes.dart';
 import 'package:proxilife_server/src/services/payment_service.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
@@ -23,7 +22,6 @@ Future<void> main(List<String> args) async {
       'E-mail   : ${config.emailConsoleMode ? 'console (offline)' : 'smtp'}');
 
   final database = await AppDatabase.open(config.dbPath);
-  stdout.writeln(await purgeTeledocOrphanPhotos(database.db));
   final users = UserRepository(database.db);
   final emailSender = createEmailSender(config);
   final ttlMinutes =
