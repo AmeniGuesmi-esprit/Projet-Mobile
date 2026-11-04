@@ -4,7 +4,6 @@ import 'package:proxilife_shared/proxilife_shared.dart';
 import '../../../../../core/session/session_controller.dart';
 import '../../../../../core/theme/app_colors.dart';
 import '../../../../../core/theme/app_spacing.dart';
-import '../../../../../core/widgets/service_badge.dart';
 import '../../../data/teledoc_local_queue_notifier.dart';
 import '../../../data/url_launcher_link_opener.dart';
 import '../../../domain/teledoc_call.dart';
@@ -114,13 +113,9 @@ class _TeledocQueueScreenState extends State<TeledocQueueScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        // No module badge here: it truncated the title on a 360 dp phone,
+        // and the TeleDoc red already identifies the module.
         title: const Text('File d\'attente'),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: AppSpacing.md),
-            child: ServiceBadge(ServiceType.teleDoc, compact: true),
-          ),
-        ],
       ),
       body: ListenableBuilder(
         listenable: _controller,
