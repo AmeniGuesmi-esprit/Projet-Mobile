@@ -285,25 +285,32 @@ class _TeledocDoctorHomeScreenState extends State<TeledocDoctorHomeScreen> {
                       child: Text('${request.positionFile ?? '?'}'),
                     ),
                     title: Text(request.motif),
-                    subtitle: Text(
-                      '${request.patientNom ?? ''} · '
-                      '${teledocWaitLabel(request.tempsEstimeMinutes)}',
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
+                    // Chips under the title, not as `trailing`: on a 360 dp
+                    // phone they squeezed the motif to a few letters a line.
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (request.aPhoto)
-                          const Padding(
-                            padding: EdgeInsets.only(right: AppSpacing.xxs),
-                            child: Icon(
-                              Icons.photo_outlined,
-                              size: 18,
-                              semanticLabel: 'Photo jointe',
-                            ),
-                          ),
-                        TeledocUrgencyChip(request.urgence),
+                        Text(
+                          '${request.patientNom ?? ''} · '
+                          '${teledocWaitLabel(request.tempsEstimeMinutes)}',
+                        ),
+                        const SizedBox(height: AppSpacing.xxs),
+                        Wrap(
+                          spacing: AppSpacing.xs,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            TeledocUrgencyChip(request.urgence),
+                            if (request.aPhoto)
+                              const Icon(
+                                Icons.photo_outlined,
+                                size: 18,
+                                semanticLabel: 'Photo jointe',
+                              ),
+                          ],
+                        ),
                       ],
                     ),
+                    trailing: const Icon(Icons.chevron_right),
                     onTap: () => _preview(request),
                   ),
                 ),

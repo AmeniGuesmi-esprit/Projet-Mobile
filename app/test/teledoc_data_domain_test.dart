@@ -182,6 +182,7 @@ void main() {
             consultationId: 7,
             type: TeledocConsultationType.video,
           ),
+          fakeStatus(statut: TeledocRequestStatus.terminee, consultationId: 7),
         ];
       final notifier = RecordingNotifier();
       final controller = TeledocQueueController(
@@ -201,10 +202,15 @@ void main() {
       await tester.pump(const Duration(seconds: 5));
       expect(controller.status!.statut, TeledocRequestStatus.enCours);
       expect(notifier.events.last, TeledocQueueEvent.started);
+      // Still polling during the consultation: the end must be seen.
+      expect(controller.isPolling, isTrue);
+
+      await tester.pump(const Duration(seconds: 5));
+      expect(controller.status!.statut, TeledocRequestStatus.terminee);
       expect(controller.isPolling, isFalse);
 
       await tester.pump(const Duration(seconds: 30));
-      expect(repo.queueStatusCalls, 3, reason: 'plus de polling');
+      expect(repo.queueStatusCalls, 4, reason: 'plus de polling');
       controller.dispose();
     });
 

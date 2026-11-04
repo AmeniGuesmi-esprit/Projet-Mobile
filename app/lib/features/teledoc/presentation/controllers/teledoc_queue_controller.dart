@@ -10,8 +10,9 @@ import '../../domain/teledoc_repository.dart';
 /// State of the patient's virtual waiting queue, refreshed by polling.
 ///
 /// Polling every [interval] (5 s, CONCEPTION.md §5.2) while the waiting
-/// screen exists; it stops by itself once the request leaves the queue
-/// (consultation started, cancelled or finished). A network error keeps the
+/// screen exists, including during the consultation (the patient must see
+/// its end and the prescription, or a switch to audio); it stops by itself
+/// once the request is final (finished or cancelled). A network error keeps the
 /// last known status on screen and polling continues.
 class TeledocQueueController extends ChangeNotifier {
   TeledocQueueController({
@@ -64,7 +65,7 @@ class TeledocQueueController extends ChangeNotifier {
       for (final event in _tracker.update(next)) {
         await notifier.notify(event, next);
       }
-      if (next.statut != TeledocRequestStatus.enAttente) stop();
+      if (TeledocRequestRules.isTerminal(next.statut)) stop();
     } on ApiException catch (e) {
       error = e.message;
       // The request is gone or no longer ours: polling is pointless.

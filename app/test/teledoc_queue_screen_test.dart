@@ -74,6 +74,7 @@ void main() {
         consultationId: 7,
         type: TeledocConsultationType.video,
       ),
+      fakeStatus(statut: TeledocRequestStatus.terminee, consultationId: 7),
     ];
     await openQueue(tester);
     await tester.pump(const Duration(seconds: 5));
@@ -84,8 +85,15 @@ void main() {
       TeledocQueueEvent.started,
     ]);
 
+    // Bug found on the emulator: the end of the consultation must reach
+    // the patient without leaving the screen.
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(find.text('Consultation terminée'), findsOneWidget);
+    expect(find.text("Voir l'ordonnance"), findsOneWidget);
+
     await tester.pump(const Duration(seconds: 30));
-    expect(repo.queueStatusCalls, 2, reason: 'polling arrêté');
+    expect(repo.queueStatusCalls, 3, reason: 'polling arrêté (état final)');
   });
 
   testWidgets('perte de connexion : bandeau, dernière position conservée', (

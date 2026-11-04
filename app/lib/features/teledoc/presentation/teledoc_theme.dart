@@ -21,6 +21,8 @@ ThemeData teledocTheme(ThemeData base) => base.copyWith(
   colorScheme: base.colorScheme.copyWith(
     primary: TeledocColors.brandDeep,
     onPrimary: Colors.white,
+    // Tint of a scrolled-under app bar (was ProxiLife green).
+    surfaceTint: TeledocColors.brand,
     secondary: TeledocColors.brandDeep,
     secondaryContainer: TeledocColors.brand.withValues(alpha: 0.15),
     // Text on the pink selected segment: darker still for 4.5:1.
@@ -60,8 +62,16 @@ class TeledocThemed extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) =>
-      Theme(data: teledocTheme(Theme.of(context)), child: child);
+  Widget build(BuildContext context) => Theme(
+    data: teledocTheme(Theme.of(context)),
+    // Text fields read their cursor colour from the selection style that
+    // MaterialApp sets above any Theme: override it too.
+    child: DefaultSelectionStyle(
+      cursorColor: TeledocColors.brandDeep,
+      selectionColor: TeledocColors.brand.withValues(alpha: 0.30),
+      child: child,
+    ),
+  );
 }
 
 /// Route used for every TeleDoc page, so that each pushed screen (and the
