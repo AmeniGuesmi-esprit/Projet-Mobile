@@ -9,6 +9,8 @@ Modules livrés ici :
   biométrique, RIB pour les professionnels.
 - **Gestion Paiement** — moyens de paiement, transactions internes avec solde,
   historique, factures, remboursements.
+- **TeleDoc Express** — téléconsultation : file d'attente virtuelle, appel
+  audio/vidéo, ordonnance, pharmacie de garde ([docs/teledoc](docs/teledoc/README.md)).
 
 ## Démarrage rapide
 

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:proxilife_server/src/auth/passwords.dart';
+import 'package:proxilife_server/src/db/teledoc_seed.dart';
 import 'package:proxilife_server/src/db/database.dart';
 import 'package:proxilife_server/src/config/server_config.dart';
 
@@ -419,6 +420,7 @@ Future<void> main() async {
   stdout.writeln('  ameniguesmi2002@gmail.com : Ameni@123');
   stdout.writeln(
       'fawzi.saidi@esprit.tn : NON seedé — inscription via SMTP (FawziSaidi2026)');
+  stdout.writeln(await seedTeledoc(db.db));
 
   await db.close();
 }

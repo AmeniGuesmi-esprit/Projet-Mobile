@@ -12,3 +12,4 @@ export 'src/transaction_rules.dart';
 export 'src/trip_enums.dart';
 export 'src/trip_rules.dart';
 export 'src/validators.dart';
+export 'src/teledoc/teledoc.dart';

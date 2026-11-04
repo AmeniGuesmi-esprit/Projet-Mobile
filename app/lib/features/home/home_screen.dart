@@ -13,6 +13,7 @@ import '../payment/new_payment_screen.dart';
 import '../payment/payment_api.dart';
 import '../payment/payment_methods_screen.dart';
 import '../payment/transaction_detail_screen.dart';
+import '../teledoc/presentation/widgets/teledoc_entry_card.dart';
 import '../../core/live/live_refresh.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -119,6 +120,8 @@ class HomeScreen extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: AppSpacing.xl),
+            TeledocEntryCard(session: session),
             const SizedBox(height: AppSpacing.xl),
             Text('Paiements',
                 style: Theme.of(context).textTheme.titleMedium),

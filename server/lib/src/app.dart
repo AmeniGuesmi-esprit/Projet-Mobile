@@ -20,6 +20,7 @@ import 'repositories/verification_repository.dart';
 import 'routes/auth_routes.dart';
 import 'routes/payment_routes.dart';
 import 'routes/reservation_routes.dart';
+import 'routes/teledoc_routes.dart';
 import 'routes/trip_routes.dart';
 import 'routes/user_routes.dart';
 import 'services/auth_service.dart';
@@ -92,7 +93,8 @@ Handler buildApp(
     ..mount('/', buildPaymentRoutes(payments).call)
     ..mount('/', buildFoodSaveRouter(foodSaveContext).call)
     ..mount('/', buildTripRoutes(trips).call)
-    ..mount('/', buildReservationRoutes(reservations).call);
+    ..mount('/', buildReservationRoutes(reservations).call)
+    ..mount('/', buildTeledocModule(database.db).call);
 
   final pipeline = Pipeline()
       .addMiddleware(requireAuth(sessions))

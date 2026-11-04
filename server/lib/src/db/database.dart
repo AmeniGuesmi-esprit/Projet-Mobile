@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../foodsave/foodsave_schema.dart';
+import 'teledoc_schema.dart';
 
 /// Opens (and migrates) the ProxiLife SQLite database.
 ///
@@ -15,6 +16,7 @@ import '../foodsave/foodsave_schema.dart';
 ///  - v4 : covoiturage (vehicule, trajet) + utilisateur.sexe
 ///  - v5 : reservation (demandes de places sur un trajet)
 ///  - v6 : embarquement (QR code / Bluetooth) sur reservation + secret par trajet
+///  - v7 : TeleDoc Express (teledoc_schema.dart, migration idempotente)
 ///
 /// An existing v1 file is upgraded in place (no data is lost).
 class AppDatabase {
@@ -49,7 +51,8 @@ class AppDatabase {
   /// v4: covoiturage (vehicule, trajet, utilisateur.sexe).
   /// v5: reservation (demandes de places).
   /// v6: embarquement (QR code / Bluetooth).
-  static const int schemaVersion = 6;
+  /// v7: TeleDoc Express.
+  static const int schemaVersion = 7;
 
   static OpenDatabaseOptions _options() => OpenDatabaseOptions(
         version: schemaVersion,
@@ -60,6 +63,7 @@ class AppDatabase {
           await _migrateToV2(db); // covoiturage  (v4 de la base)
           await _migrateToV3(db); // réservations (v5 de la base)
           await _migrateToV4(db); // embarquement (v6 de la base)
+          await createTeledocSchema(db); // TeleDoc (v7 de la base)
         },
         onUpgrade: (db, oldVersion, newVersion) async {
           // FoodSave (ton ami)
@@ -74,6 +78,10 @@ class AppDatabase {
           if (oldVersion < 4) await _migrateToV2(db);
           if (oldVersion < 5) await _migrateToV3(db);
           if (oldVersion < 6) await _migrateToV4(db);
+          // TeleDoc : idempotent (tables et colonnes créées si absentes).
+          if (oldVersion < 7) {
+            await upgradeTeledocSchema(db, oldVersion, newVersion);
+          }
         },
       );
 
