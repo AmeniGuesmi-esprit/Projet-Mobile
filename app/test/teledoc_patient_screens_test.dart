@@ -58,7 +58,7 @@ void main() {
       expect(find.text('Votre file de patients'), findsOneWidget);
     });
 
-    testWidgets('masqué pour les autres rôles', (tester) async {
+    testWidgets('autres rôles : entrée patient', (tester) async {
       await tester.pumpWidget(
         wrap(
           Scaffold(
@@ -68,7 +68,7 @@ void main() {
           ),
         ),
       );
-      expect(find.text('TeleDoc Express'), findsNothing);
+      expect(find.text('Consulter un médecin à distance'), findsOneWidget);
     });
   });
 
@@ -140,7 +140,7 @@ void main() {
       expect(find.text('Nouvelle demande'), findsOneWidget);
     });
 
-    testWidgets('rôle non autorisé : message explicite', (tester) async {
+    testWidgets('autre rôle (commerçant) : espace patient', (tester) async {
       await tester.pumpWidget(
         wrap(
           TeledocHomeScreen(
@@ -149,7 +149,8 @@ void main() {
           ),
         ),
       );
-      expect(find.text('Réservé aux patients et aux médecins'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.text('Nouvelle demande'), findsOneWidget);
     });
   });
 

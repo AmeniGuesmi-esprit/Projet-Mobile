@@ -12,9 +12,12 @@ import 'trip_search_query.dart';
 /// "Où allez-vous ?" (passenger): position, destination, date, radius and
 /// travel preferences. Opens the results screen.
 class SearchTripsScreen extends StatefulWidget {
-  const SearchTripsScreen({super.key, required this.session});
+  const SearchTripsScreen({super.key, required this.session, this.embedded = false});
 
   final SessionController session;
+
+  /// Shown inside [CovoiturageHubScreen] (no own app bar).
+  final bool embedded;
 
   @override
   State<SearchTripsScreen> createState() => _SearchTripsScreenState();
@@ -96,10 +99,13 @@ class _SearchTripsScreenState extends State<SearchTripsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: const Text('Rechercher un trajet'),
-      ),
+      // Inside the "Covoiturage" hub, its tab bar replaces this one.
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              automaticallyImplyLeading: false,
+              title: const Text('Rechercher un trajet'),
+            ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.xl),

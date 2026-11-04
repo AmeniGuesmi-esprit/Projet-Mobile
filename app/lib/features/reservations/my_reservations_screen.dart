@@ -14,9 +14,12 @@ import 'widgets/reservation_status_badge.dart';
 
 /// "Mes réservations" (passenger): requests sent, their status, cancellation.
 class MyReservationsScreen extends StatefulWidget {
-  const MyReservationsScreen({super.key, required this.session});
+  const MyReservationsScreen({super.key, required this.session, this.embedded = false});
 
   final SessionController session;
+
+  /// Shown inside [CovoiturageHubScreen] (no own app bar).
+  final bool embedded;
 
   @override
   State<MyReservationsScreen> createState() => _MyReservationsScreenState();
@@ -91,10 +94,13 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: const Text('Mes réservations'),
-      ),
+      // Inside the "Covoiturage" hub, its tab bar replaces this one.
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              automaticallyImplyLeading: false,
+              title: const Text('Mes réservations'),
+            ),
       body: RefreshIndicator(
         color: AppColors.primary,
         onRefresh: _reload,

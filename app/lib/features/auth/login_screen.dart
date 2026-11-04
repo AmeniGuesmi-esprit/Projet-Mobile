@@ -10,9 +10,12 @@ import 'register_screen.dart';
 import 'verify_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.session});
+  const LoginScreen({super.key, required this.session, this.onBack});
 
   final SessionController session;
+
+  /// Back to the landing page (arrow shown when set).
+  final VoidCallback? onBack;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -82,7 +85,17 @@ class _LoginScreenState extends State<LoginScreen> {
           padding: const EdgeInsets.all(AppSpacing.xl),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           children: [
-            const SizedBox(height: AppSpacing.xxl),
+            if (widget.onBack != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  tooltip: 'Retour',
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: widget.onBack,
+                ),
+              ),
+            SizedBox(
+                height: widget.onBack != null ? AppSpacing.md : AppSpacing.xxl),
             Align(
               alignment: Alignment.centerLeft,
               child: Container(

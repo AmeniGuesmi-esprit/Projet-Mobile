@@ -13,9 +13,12 @@ import 'widgets/reservation_status_badge.dart';
 /// "Demandes reçues" (driver): seat requests on his trips, with Accepter /
 /// Refuser on the pending ones.
 class ReceivedRequestsScreen extends StatefulWidget {
-  const ReceivedRequestsScreen({super.key, required this.session});
+  const ReceivedRequestsScreen({super.key, required this.session, this.embedded = false});
 
   final SessionController session;
+
+  /// Shown inside [CovoiturageHubScreen] (no own app bar).
+  final bool embedded;
 
   @override
   State<ReceivedRequestsScreen> createState() => _ReceivedRequestsScreenState();
@@ -84,10 +87,13 @@ class _ReceivedRequestsScreenState extends State<ReceivedRequestsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: const Text('Demandes reçues'),
-      ),
+      // Inside the "Covoiturage" hub, its tab bar replaces this one.
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              automaticallyImplyLeading: false,
+              title: const Text('Demandes reçues'),
+            ),
       body: RefreshIndicator(
         color: AppColors.primary,
         onRefresh: _reload,

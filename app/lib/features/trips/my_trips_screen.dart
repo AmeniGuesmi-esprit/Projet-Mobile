@@ -16,9 +16,12 @@ import 'widgets/trip_preference_chips.dart';
 
 /// Trips published by the connected driver.
 class MyTripsScreen extends StatefulWidget {
-  const MyTripsScreen({super.key, required this.session});
+  const MyTripsScreen({super.key, required this.session, this.embedded = false});
 
   final SessionController session;
+
+  /// Shown inside [CovoiturageHubScreen] (no own app bar).
+  final bool embedded;
 
   @override
   State<MyTripsScreen> createState() => _MyTripsScreenState();
@@ -50,10 +53,13 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: const Text('Mes trajets'),
-      ),
+      // Inside the "Covoiturage" hub, its tab bar replaces this one.
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              automaticallyImplyLeading: false,
+              title: const Text('Mes trajets'),
+            ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'tripsFab',
         onPressed: _publish,

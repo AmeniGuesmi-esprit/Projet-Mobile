@@ -7,7 +7,9 @@ import 'core/session/session_controller.dart';
 import 'core/session/stores.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
+import 'features/auth/landing_screen.dart';
 import 'features/auth/login_screen.dart';
+import 'features/auth/register_screen.dart';
 import 'features/foodsave/platform/foodsave_hub_screen.dart';
 import 'features/foodsave/platform/foodsave_navigation.dart';
 import 'features/foodsave/platform/foodsave_notification_poller.dart';
@@ -63,6 +65,21 @@ class _SplashGateState extends State<SplashGate> {
   bool _ready = false;
   bool _wasAuthenticated = false;
 
+  /// Signed out: the landing page comes first; « Se connecter » / « Créer
+  /// un compte » switch to the login screen (back returns here).
+  bool _showLanding = true;
+
+  void _openLogin() => setState(() => _showLanding = false);
+
+  void _openRegister(BuildContext context) {
+    setState(() => _showLanding = false);
+    // After registration + verification the stack pops to the login root.
+    Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => RegisterScreen(session: widget.session)));
+  }
+
+  void _backToLanding() => setState(() => _showLanding = true);
+
   @override
   void initState() {
     super.initState();
@@ -92,6 +109,8 @@ class _SplashGateState extends State<SplashGate> {
     } else if (session.status == SessionStatus.unauthenticated &&
         _wasAuthenticated) {
       _wasAuthenticated = false;
+      // Signed out: start again from the landing page.
+      if (mounted) setState(() => _showLanding = true);
       FoodSaveNotificationPoller.instance.stop();
       FoodSaveLocationService.instance.reset();
       FoodSaveHubScreen.resetSessionState();
@@ -159,7 +178,21 @@ class _SplashGateState extends State<SplashGate> {
             if (widget.session.status == SessionStatus.authenticated) {
               return MainShell(session: widget.session);
             }
-            return LoginScreen(session: widget.session);
+            if (_showLanding) {
+              return LandingScreen(
+                onLogin: _openLogin,
+                onRegister: () => _openRegister(context),
+              );
+            }
+            // System back on the login screen returns to the landing page.
+            return PopScope(
+              canPop: false,
+              onPopInvokedWithResult: (didPop, _) {
+                if (!didPop) _backToLanding();
+              },
+              child: LoginScreen(
+                  session: widget.session, onBack: _backToLanding),
+            );
           },
         );
       },
