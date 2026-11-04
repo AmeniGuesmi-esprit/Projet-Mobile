@@ -80,7 +80,7 @@ Deux appareils simulés : l'émulateur pour le patient, et soit un second
 
 ## 5. Guide de test
 
-### 5.1 Tests automatisés (174 tests TeleDoc)
+### 5.1 Tests automatisés (175 tests TeleDoc)
 
 ```bash
 cd packages/proxilife_shared && dart analyze && dart test
@@ -93,7 +93,7 @@ cd ../app && flutter analyze && flutter test
 | Paquet | Fichiers | Ce qui est vérifié |
 |---|---|---|
 | Partagé (35) | `teledoc_request_rules_test`, `teledoc_queue_test`, `teledoc_geo_and_validators_test`, `teledoc_call_room_test` | Machine à états (qui peut faire quelle transition), tri de la file et formule d'attente, Haversine, validateurs, format de la salle d'appel. |
-| Serveur (60) | `teledoc_api_test`, `teledoc_queue_api_test`, `teledoc_schema_test`, `teledoc_payment_adapter_test`, `teledoc_photo_purge_test` | Toute l'API derrière la vraie authentification : rôles (403), visibilité (404), validation (400), conflits (409), paiement refusé (402). Concurrence de deux médecins, migrations v1→v3 et v2→v3, contrats avec le vrai `PaymentService`, nettoyage des photos. |
+| Serveur (61) | `teledoc_api_test`, `teledoc_queue_api_test`, `teledoc_schema_test`, `teledoc_payment_adapter_test`, `teledoc_photo_purge_test` | Toute l'API derrière la vraie authentification : rôles (403), visibilité (404), validation (400), conflits (409), paiement refusé (402). Concurrence de deux médecins, migrations v1→v7 et v6→v7, contrats avec le vrai `PaymentService`, nettoyage des photos. |
 | App (79) | `teledoc_data_domain_test`, `teledoc_patient_screens_test`, `teledoc_queue_screen_test`, `teledoc_doctor_screens_test`, `teledoc_call_test`, `teledoc_pharmacy_test`, `teledoc_accessibility_test` | Couche données, écrans patient et médecin, polling et notifications, lien Jitsi, carte et GPS refusé, accessibilité (48 dp, libellés, contraste, police à 200 %). |
 
 ### 5.2 Vérifications manuelles (sur émulateur)
@@ -142,5 +142,5 @@ flowchart LR
 - **Pas de push quand l'app est tuée** : Firebase est interdit par `AGENTS.md`. Les notifications arrivent tant que le processus vit (D31).
 - **Paiement** : mock par défaut tant qu'un compte bénéficiaire n'est pas convenu avec Fawzi (§7.6). Sur `feat/payment`, la devise par défaut est passée à `EUR` alors qu'`AGENTS.md` impose `TND`.
 - **Code partagé** : `PrimaryButton` déborde avec une grande police (libellé non `Flexible`), et `ServiceBadge` a un contraste de 3,15:1 sur « TeleDoc Express ». Signalés, non modifiés (D42).
-- **Version de base** : FoodSave et TeleDoc utilisent tous deux la « version 2 ». La migration TeleDoc est idempotente (D36), et l'intégrateur choisit le numéro final à la fusion.
+- **Version de base** : après intégration dans `main`, TeleDoc est la **version 7** de la base. Une ancienne base locale de développement doit être supprimée (`server/proxi_life.db`) puis recréée avec `dart run bin/seed.dart`.
 - **meet.jit.si** : le modérateur (médecin) doit se connecter une fois. Une instance auto-hébergée lève cette contrainte (`TELEDOC_JITSI_URL`).

@@ -83,7 +83,7 @@ class AuthService {
       prenom: prenom,
       email: email,
       telephone: telephone,
-      motDePasseHash: hasher.hashPassword(motDePasse),
+      motDePasseHash: await hasher.hashPasswordAsync(motDePasse),
       role: role,
       rib: trimmedRib == null || trimmedRib.isEmpty ? null : trimmedRib,
     );
@@ -146,7 +146,7 @@ class AuthService {
     email = normalizeEmail(email);
     final user = await users.findByEmail(email);
     final passwordOk = user != null &&
-        hasher.verifyPassword(
+        await hasher.verifyPasswordAsync(
             motDePasse, user['mot_de_passe_hash'] as String);
     if (!passwordOk) {
       throw ApiError.unauthorized('E-mail ou mot de passe incorrect');

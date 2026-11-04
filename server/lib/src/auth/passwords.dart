@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -36,6 +37,15 @@ class PasswordHasher {
     return _constantTimeEquals(actual, expected);
   }
 
+  /// [hashPassword] on a background isolate: PBKDF2 takes seconds of pure
+  /// CPU, which would otherwise block every other request of the server.
+  Future<String> hashPasswordAsync(String password) =>
+      Isolate.run(() => hashPassword(password));
+
+  /// [verifyPassword] on a background isolate (see [hashPasswordAsync]).
+  Future<bool> verifyPasswordAsync(String password, String stored) =>
+      Isolate.run(() => verifyPassword(password, stored));
+
   static bool _constantTimeEquals(List<int> a, List<int> b) {
     if (a.length != b.length) return false;
     var diff = 0;
@@ -52,13 +62,15 @@ Uint8List pbkdf2(String password, List<int> salt, int iterations, int dkLen) {
   final hmacLength = sha256.convert(const []).bytes.length;
   final blockCount = (dkLen / hmacLength).ceil();
   final output = <int>[];
+  // One keyed HMAC for all rounds (same output, no per-round key setup).
+  final hmac = Hmac(sha256, passwordBytes);
   for (var block = 1; block <= blockCount; block++) {
-    var u = Hmac(sha256, passwordBytes)
+    var u = hmac
         .convert([...salt, (block >> 24) & 0xff, (block >> 16) & 0xff, (block >> 8) & 0xff, block & 0xff])
         .bytes;
     var t = List<int>.from(u);
     for (var i = 1; i < iterations; i++) {
-      u = Hmac(sha256, passwordBytes).convert(u).bytes;
+      u = hmac.convert(u).bytes;
       for (var j = 0; j < t.length; j++) {
         t[j] ^= u[j];
       }

@@ -37,18 +37,30 @@ class ApiClient {
 
   Future<Map<String, dynamic>> getJson(String path) =>
       _send('GET', path, null);
-  Future<Map<String, dynamic>> postJson(String path, [Map<String, dynamic>? body]) =>
-      _send('POST', path, body);
+  /// [timeout] overrides [defaultTimeout] (e.g. login: the server hashes the
+  /// password with PBKDF2, which takes seconds on a slow machine).
+  Future<Map<String, dynamic>> postJson(String path,
+          [Map<String, dynamic>? body, Duration? timeout]) =>
+      _send('POST', path, body, timeout);
   Future<Map<String, dynamic>> patchJson(String path, Map<String, dynamic> body) =>
       _send('PATCH', path, body);
+  Future<Map<String, dynamic>> putJson(String path, Map<String, dynamic> body) =>
+      _send('PUT', path, body);
   Future<Map<String, dynamic>> deleteJson(String path, [Map<String, dynamic>? body]) =>
       _send('DELETE', path, body);
+
+  /// Time limit for ordinary requests.
+  static const Duration defaultTimeout = Duration(seconds: 10);
+
+  /// Time limit for requests that hash a password on the server.
+  static const Duration passwordTimeout = Duration(seconds: 30);
 
   Future<Map<String, dynamic>> _send(
     String verb,
     String path,
-    Map<String, dynamic>? body,
-  ) async {
+    Map<String, dynamic>? body, [
+    Duration? timeout,
+  ]) async {
     final headers = <String, String>{
       'content-type': 'application/json',
       if (token != null) 'authorization': 'Bearer $token',
@@ -61,10 +73,11 @@ class ApiClient {
         'GET' => _http.get(uri, headers: headers),
         'POST' => _http.post(uri, headers: headers, body: jsonEncode(body)),
         'PATCH' => _http.patch(uri, headers: headers, body: jsonEncode(body)),
+        'PUT' => _http.put(uri, headers: headers, body: jsonEncode(body)),
         'DELETE' => _http.delete(uri, headers: headers, body: jsonEncode(body)),
         _ => throw ArgumentError('Unsupported verb $verb'),
       };
-      response = await future.timeout(const Duration(seconds: 10));
+      response = await future.timeout(timeout ?? defaultTimeout);
     } on TimeoutException {
       throw const ApiException(0,
           'Serveur local indisponible : vérifiez qu\'il est lancé puis réessayez');

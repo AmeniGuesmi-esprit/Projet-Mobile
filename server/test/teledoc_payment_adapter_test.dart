@@ -53,11 +53,16 @@ void main() {
       ))
           .single['solde_centimes'] as int;
 
-  Future<void> addCash() =>
-      payments.addMethod(patient, type: PaymentMethodType.especes);
+  Future<void> addCard() => payments.addMethod(
+        patient,
+        type: PaymentMethodType.carteBancaire,
+        numeroCarte: '4111 1111 1111 1111',
+        nomTitulaire: 'Ameni Guesmi',
+        dateExpiration: '12/39',
+      );
 
   test('charge : transaction TeleDoc réelle, référence TD-<id>', () async {
-    await addCash();
+    await addCard();
     final id = await gateway.charge(
       patientId: patient,
       amountCents: TeledocPricing.consultationCents,
@@ -80,6 +85,19 @@ void main() {
     );
   });
 
+  test('espèces : refusées (paiement à confirmer), transaction annulée',
+      () async {
+    await payments.addMethod(patient, type: PaymentMethodType.especes);
+    await expectLater(
+      () => gateway.charge(patientId: patient, amountCents: 3000, requestId: 1),
+      throwsA(isA<TeledocPaymentDeclined>()
+          .having((e) => e.message, 'message', contains('espèces'))),
+    );
+    final pending = await database.db
+        .query('transaction_', where: 'statut = ?', whereArgs: ['en_attente']);
+    expect(pending, isEmpty);
+  });
+
   test('portefeuille insuffisant : refus', () async {
     await payments.addMethod(patient, type: PaymentMethodType.portefeuille);
     expect(
@@ -89,7 +107,7 @@ void main() {
   });
 
   test('refund : transaction remboursée', () async {
-    await addCash();
+    await addCard();
     final id = await gateway.charge(
         patientId: patient, amountCents: 3000, requestId: 1);
     await gateway.refund(transactionId: id, patientId: patient);
@@ -99,7 +117,7 @@ void main() {
   });
 
   test('blocage connu (§7.4) : bénéficiaire sans solde → refus', () async {
-    await addCash();
+    await addCard();
     final id = await gateway.charge(
         patientId: patient, amountCents: 3000, requestId: 1);
     // The beneficiary already cashed out.
@@ -153,7 +171,7 @@ void main() {
     expect(refusedBody['error'], contains('moyen de paiement'));
     expect(await database.db.query('teledoc_demande'), isEmpty);
 
-    await addCash();
+    await addCard();
     final (created, request) =
         await call('POST', '/teledoc/requests', validRequestBody());
     expect(created, 201);

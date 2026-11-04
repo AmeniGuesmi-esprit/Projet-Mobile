@@ -57,9 +57,7 @@ Thumbs.db
 .DS_Store
 desktop.ini
 
-# TeleDoc : photos de symptômes envoyées au serveur local
+# FoodSave basket photos (server runtime data)
 server/uploads/
-.dart_tool/
-build/
-server/uploads/
-*.db
+
+*.db.old

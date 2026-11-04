@@ -570,6 +570,8 @@ elle sera prête. Aucun développement de paiement dans TeleDoc.
         beneficiaryEmail: '<compte plateforme choisi avec Fawzi>')).call);
 ```
 
+**Intégration dans `main` (04/11)** : sur `main`, un paiement en **espèces** reste `en_attente` jusqu'à confirmation du bénéficiaire. Pour une téléconsultation, l'adaptateur annule cette transaction et refuse avec « Les espèces ne sont pas acceptées pour une téléconsultation » (test dédié). La base intégrée est en **version 7** : TeleDoc s'ajoute après FoodSave (v2–v3) et le covoiturage (v4–v6), grâce à la migration idempotente (D36).
+
 **Point à signaler à Fawzi** : sur `feat/payment`, la devise par défaut des transactions est passée de `TND` à `EUR`, alors que `AGENTS.md` impose `TND`. TeleDoc affiche 30 DT.
 
 ## 8. Appel audio / vidéo (Étape 9)

@@ -40,12 +40,21 @@ class PaymentServiceTeledocGateway implements TeledocPaymentGateway {
       // e.g. « Ajoutez d'abord un moyen de paiement », expired card.
       throw TeledocPaymentDeclined(e.message);
     }
-    if (transaction.statut != TransactionStatus.paye) {
-      // Wallet payment with an insufficient balance (`echoue`).
-      throw const TeledocPaymentDeclined(
-          'Paiement refusé : solde du portefeuille insuffisant');
+    switch (transaction.statut) {
+      case TransactionStatus.paye:
+        return transaction.id;
+      case TransactionStatus.enAttente:
+        // Cash waits for the beneficiary's confirmation: impossible for a
+        // remote consultation, so the pending transaction is cancelled.
+        await _payments.cancel(transaction.id, patientId, UserRole.client);
+        throw const TeledocPaymentDeclined(
+            'Les espèces ne sont pas acceptées pour une téléconsultation : '
+            'choisissez une carte ou le portefeuille');
+      default:
+        // Wallet payment with an insufficient balance (`echoue`).
+        throw const TeledocPaymentDeclined(
+            'Paiement refusé : solde du portefeuille insuffisant');
     }
-    return transaction.id;
   }
 
   @override

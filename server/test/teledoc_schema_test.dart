@@ -32,7 +32,7 @@ void main() {
             'teledoc_consultation',
             'teledoc_consultation_une_en_cours',
           ]));
-      expect(await db.getVersion(), 3);
+      expect(await db.getVersion(), AppDatabase.schemaVersion);
     });
 
     test('les CHECK refusent une urgence inconnue', () async {
@@ -87,7 +87,7 @@ void main() {
     });
   });
 
-  test('migration v1 → v2 : ajoute les tables sans toucher aux données',
+  test('migration v1 → v7 : ajoute les tables sans toucher aux données',
       () async {
     final dir = await Directory.systemTemp.createTemp('teledoc_migration');
     final path = p.join(dir.path, 'v1.db');
@@ -104,58 +104,61 @@ void main() {
     await v1.close();
 
     final upgraded = await AppDatabase.open(path);
-    expect(await upgraded.db.getVersion(), 3);
+    expect(await upgraded.db.getVersion(), AppDatabase.schemaVersion);
     expect((await upgraded.db.query('utilisateur')).single['nom'], 'Ancien');
     expect(await upgraded.db.query('teledoc_pharmacie'), isEmpty);
     await upgraded.close();
     await dir.delete(recursive: true);
   });
 
-  test('migration v2 → v3 : ajoute salle_appel, idempotente', () async {
+  test('migration v6 → v7 (base de main avant TeleDoc), idempotente', () async {
     final dir = await Directory.systemTemp.createTemp('teledoc_migration');
-    final path = p.join(dir.path, 'v2.db');
-    sqfliteFfiInit();
-    // A v2 database as it existed before Étape 9 (no salle_appel column).
-    final v2 = await databaseFactoryFfi.openDatabase(path,
-        options: OpenDatabaseOptions(
-          version: 2,
-          onCreate: (db, _) async {
-            await db.execute(
-                'CREATE TABLE utilisateur (id INTEGER PRIMARY KEY, nom TEXT)');
-            await db.insert('utilisateur', {'id': 1, 'nom': 'Patient'});
-            await db.insert('utilisateur', {'id': 2, 'nom': 'Médecin'});
-            await db.execute('''
+    final path = p.join(dir.path, 'v6.db');
+    // A real v6 base (all other modules), then TeleDoc removed as before
+    // the merge, except an old consultation table without salle_appel.
+    final fresh = await AppDatabase.open(path);
+    final db = fresh.db;
+    final patient = await insertTestUser(db, 'p@test.tn', 'client');
+    final doctor = await insertTestUser(db, 'd@test.tn', 'medecin');
+    for (final table in [
+      'teledoc_consultation',
+      'teledoc_demande',
+      'teledoc_pharmacie',
+    ]) {
+      await db.execute('DROP TABLE $table');
+    }
+    await db.execute('''
 CREATE TABLE teledoc_demande (id INTEGER PRIMARY KEY, motif TEXT,
   description TEXT, urgence TEXT, photo_symptome TEXT, statut TEXT,
   patient_id INTEGER, transaction_id INTEGER, cree_le TEXT, modifie_le TEXT)''');
-            await db.execute('''
+    await db.execute('''
 CREATE TABLE teledoc_consultation (id INTEGER PRIMARY KEY, date_debut TEXT,
   date_fin TEXT, type TEXT, ordonnance TEXT, pharmacie_id INTEGER,
   demande_id INTEGER, medecin_id INTEGER)''');
-            for (final (id, fin) in [(1, null), (2, '2026-10-14T10:00:00')]) {
-              await db.insert('teledoc_demande', {'id': id, 'patient_id': 1});
-              await db.insert('teledoc_consultation', {
-                'id': id,
-                'date_debut': '2026-10-14T09:00:00',
-                'date_fin': fin,
-                'type': 'audio',
-                'demande_id': id,
-                'medecin_id': 2,
-              });
-            }
-          },
-        ));
-    await v2.close();
+    for (final (id, fin) in [(1, null), (2, '2026-10-14T10:00:00')]) {
+      await db.insert('teledoc_demande', {'id': id, 'patient_id': patient});
+      await db.insert('teledoc_consultation', {
+        'id': id,
+        'date_debut': '2026-10-14T09:00:00',
+        'date_fin': fin,
+        'type': 'audio',
+        'demande_id': id,
+        'medecin_id': doctor,
+      });
+    }
+    await db.setVersion(6);
+    await fresh.close();
 
     final upgraded = await AppDatabase.open(path);
-    expect(await upgraded.db.getVersion(), 3);
+    expect(await upgraded.db.getVersion(), AppDatabase.schemaVersion);
+    expect(await upgraded.db.query('teledoc_pharmacie'), isEmpty);
     final rows = await upgraded.db
         .query('teledoc_consultation', orderBy: 'id', columns: ['salle_appel']);
     // The open consultation gets a room, the finished one does not need one.
     expect(rows[0]['salle_appel'], matches(r'^ProxiLifeTeleDoc[0-9a-f]{32}$'));
     expect(rows[1]['salle_appel'], isNull);
     // Running the hook again changes nothing (merge-order independent).
-    await upgradeTeledocSchema(upgraded.db, 2, 3);
+    await upgradeTeledocSchema(upgraded.db, 6, 7);
     expect(
         (await upgraded.db.query('teledoc_consultation', orderBy: 'id'))
             .first['salle_appel'],

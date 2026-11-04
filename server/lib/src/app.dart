@@ -8,16 +8,25 @@ import 'auth/session_service.dart';
 import 'config/server_config.dart';
 import 'db/database.dart';
 import 'email/email_sender.dart';
+import 'foodsave/foodsave_context.dart';
+import 'foodsave/foodsave_module.dart';
 import 'repositories/payment_method_repository.dart';
+import 'repositories/reservation_repository.dart';
 import 'repositories/transaction_repository.dart';
+import 'repositories/trip_repository.dart';
 import 'repositories/user_repository.dart';
+import 'repositories/vehicle_repository.dart';
 import 'repositories/verification_repository.dart';
 import 'routes/auth_routes.dart';
 import 'routes/payment_routes.dart';
+import 'routes/reservation_routes.dart';
 import 'routes/teledoc_routes.dart';
+import 'routes/trip_routes.dart';
 import 'routes/user_routes.dart';
 import 'services/auth_service.dart';
 import 'services/payment_service.dart';
+import 'services/reservation_service.dart';
+import 'services/trip_service.dart';
 
 /// Wires repositories, services and routes into a single shelf [Handler].
 /// Reusable by the real server (`bin/server.dart`) and by integration tests
@@ -27,6 +36,8 @@ Handler buildApp(
   ServerConfig config, {
   EmailSender? emailSender,
   bool logRequestsMiddleware = true,
+  FoodSaveContext? foodSave,
+  String uploadsDir = 'uploads',
 }) {
   final users = UserRepository(database.db);
   final verification = VerificationRepository(database.db);
@@ -44,6 +55,25 @@ Handler buildApp(
     methods: PaymentMethodRepository(database.db),
     transactions: TransactionRepository(database.db),
   );
+  final trips = TripService(
+    vehicles: VehicleRepository(database.db),
+    trips: TripRepository(database.db),
+  );
+  final reservations = ReservationService(
+    db: database.db,
+    reservations: ReservationRepository(database.db),
+    trips: TripRepository(database.db),
+    users: users,
+  );
+
+  final foodSaveContext = foodSave ??
+      FoodSaveContext(
+        db: database.db,
+        users: users,
+        payments: payments,
+        uploadsDir: uploadsDir,
+        mailer: switch (sender) { ReservationMailer m => m, _ => null },
+      );
 
   final router = Router()
     ..get('/health', (Request request) {
@@ -61,6 +91,9 @@ Handler buildApp(
         (Request request) => handleLogout(request, auth))
     ..mount('/', buildUserRoutes(users, auth).call)
     ..mount('/', buildPaymentRoutes(payments).call)
+    ..mount('/', buildFoodSaveRouter(foodSaveContext).call)
+    ..mount('/', buildTripRoutes(trips).call)
+    ..mount('/', buildReservationRoutes(reservations).call)
     ..mount('/', buildTeledocModule(database.db).call);
 
   final pipeline = Pipeline()

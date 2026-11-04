@@ -54,6 +54,8 @@ class UserRepository {
     String? rib,
     bool clearPhoto = false,
     bool clearRib = false,
+    String? sexe,
+    bool clearSexe = false,
   }) async {
     final values = <String, Object?>{};
     if (nom != null) values['nom'] = nom;
@@ -63,6 +65,8 @@ class UserRepository {
     if (clearPhoto) values['photo'] = null;
     if (rib != null) values['rib'] = normalizeRib(rib);
     if (clearRib) values['rib'] = null;
+    if (sexe != null) values['sexe'] = sexe;
+    if (clearSexe) values['sexe'] = null;
     if (values.isEmpty) return;
     await _db.update('utilisateur', values, where: 'id = ?', whereArgs: [id]);
   }
@@ -80,6 +84,26 @@ class UserRepository {
         where: 'id = ?',
         whereArgs: [id],
       );
+
+  /// Atomically adjusts the balance by [delta] cents (negative to debit).
+  /// Accepts a [DatabaseExecutor] so callers inside a `db.transaction` use
+  /// the transaction handle (using the outer handle would deadlock sqflite).
+  Future<void> addSolde(DatabaseExecutor exec, int id, int delta) =>
+      exec.rawUpdate(
+        'UPDATE utilisateur SET solde_centimes = solde_centimes + ? '
+        'WHERE id = ?',
+        [delta, id],
+      );
+
+  Future<int> soldeOfId(DatabaseExecutor exec, int id) async {
+    final rows = await exec.query(
+      'utilisateur',
+      columns: ['solde_centimes'],
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    return rows.first['solde_centimes'] as int;
+  }
 
   int soldeOf(Map<String, Object?> row) => row['solde_centimes'] as int;
 
