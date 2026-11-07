@@ -5,6 +5,7 @@ import 'package:shelf_router/shelf_router.dart';
 
 import 'auth/auth_middleware.dart';
 import 'auth/session_service.dart';
+import 'coach/coach_module.dart';
 import 'config/server_config.dart';
 import 'db/database.dart';
 import 'email/email_sender.dart';
@@ -37,6 +38,7 @@ Handler buildApp(
   EmailSender? emailSender,
   bool logRequestsMiddleware = true,
   FoodSaveContext? foodSave,
+  CoachService? coach,
   String uploadsDir = 'uploads',
 }) {
   final users = UserRepository(database.db);
@@ -75,6 +77,9 @@ Handler buildApp(
         mailer: switch (sender) { ReservationMailer m => m, _ => null },
       );
 
+  final coachService =
+      coach ?? buildCoachService(database.db, users, payments);
+
   final router = Router()
     ..get('/health', (Request request) {
       return Response.ok(
@@ -94,7 +99,8 @@ Handler buildApp(
     ..mount('/', buildFoodSaveRouter(foodSaveContext).call)
     ..mount('/', buildTripRoutes(trips).call)
     ..mount('/', buildReservationRoutes(reservations).call)
-    ..mount('/', buildTeledocModule(database.db).call);
+    ..mount('/', buildTeledocModule(database.db).call)
+    ..mount('/', buildCoachModule(coachService).call);
 
   final pipeline = Pipeline()
       .addMiddleware(requireAuth(sessions))

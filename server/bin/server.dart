@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:proxilife_server/src/app.dart';
+import 'package:proxilife_server/src/coach/coach_module.dart';
 import 'package:proxilife_server/src/db/database.dart';
 import 'package:proxilife_server/src/config/server_config.dart';
 import 'package:proxilife_server/src/email/email_sender.dart';
@@ -26,24 +27,28 @@ Future<void> main(List<String> args) async {
   final emailSender = createEmailSender(config);
   final ttlMinutes =
       int.tryParse(Platform.environment['FOODSAVE_QR_TTL_MINUTES'] ?? '') ?? 30;
+  final payments = PaymentService(
+    db: database.db,
+    users: users,
+    methods: PaymentMethodRepository(database.db),
+    transactions: TransactionRepository(database.db),
+  );
   final foodSave = FoodSaveContext(
     db: database.db,
     users: users,
-    payments: PaymentService(
-      db: database.db,
-      users: users,
-      methods: PaymentMethodRepository(database.db),
-      transactions: TransactionRepository(database.db),
-    ),
+    payments: payments,
     uploadsDir: 'uploads',
     qrTtl: Duration(minutes: ttlMinutes),
     mailer: switch (emailSender) { ReservationMailer m => m, _ => null },
     geocoder: NominatimGeocoder(),
     routePlanner: OsrmRoutePlanner(),
   );
+  final coach = buildCoachService(database.db, users, payments);
   final handler = buildApp(database, config,
-      emailSender: emailSender, foodSave: foodSave);
+      emailSender: emailSender, foodSave: foodSave, coach: coach);
   final foodSaveJobs = startFoodSaveJobs(foodSave);
+  final coachJobs = startCoachJobs(coach);
+  stdout.writeln('CoachProche : rappels avant séance, job toutes les 60 s');
   stdout.writeln('FoodSave : QR $ttlMinutes min, expiry job every 30 s');
 
   final server = await shelf_io.serve(
@@ -57,6 +62,7 @@ Future<void> main(List<String> args) async {
 
   ProcessSignal.sigint.watch().listen((_) async {
     foodSaveJobs.cancel();
+    coachJobs.cancel();
     await database.close();
     await server.close(force: true);
     exit(0);

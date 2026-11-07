@@ -10,6 +10,7 @@ import 'core/theme/app_theme.dart';
 import 'features/auth/landing_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/register_screen.dart';
+import 'features/coach/data/coach_notification_poller.dart';
 import 'features/foodsave/platform/foodsave_hub_screen.dart';
 import 'features/foodsave/platform/foodsave_navigation.dart';
 import 'features/foodsave/platform/foodsave_notification_poller.dart';
@@ -90,6 +91,7 @@ class _SplashGateState extends State<SplashGate> {
   void dispose() {
     widget.session.removeListener(_onSessionChanged);
     FoodSaveNotificationPoller.instance.stop();
+    CoachNotificationPoller.instance.stop();
     super.dispose();
   }
 
@@ -101,6 +103,7 @@ class _SplashGateState extends State<SplashGate> {
     if (session.status == SessionStatus.authenticated && session.user != null) {
       _wasAuthenticated = true;
       FoodSaveNotificationPoller.instance.start(session);
+      CoachNotificationPoller.instance.start(session);
       final payload = NotificationService.instance.takeLaunchPayload();
       if (payload != null) {
         WidgetsBinding.instance.addPostFrameCallback(
@@ -112,6 +115,7 @@ class _SplashGateState extends State<SplashGate> {
       // Signed out: start again from the landing page.
       if (mounted) setState(() => _showLanding = true);
       FoodSaveNotificationPoller.instance.stop();
+      CoachNotificationPoller.instance.stop();
       FoodSaveLocationService.instance.reset();
       FoodSaveHubScreen.resetSessionState();
     }

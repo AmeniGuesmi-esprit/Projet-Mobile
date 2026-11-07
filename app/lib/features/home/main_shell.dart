@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/session/session_controller.dart';
+import '../coach/presentation/coach_theme.dart';
+import '../coach/presentation/screens/coach_home_screen.dart';
 import '../foodsave/platform/foodsave_hub_screen.dart';
 import '../foodsave/platform/foodsave_notification_poller.dart';
 import '../payment/payments_screen.dart';
@@ -108,6 +110,17 @@ class _MainShellState extends State<MainShell> {
           icon: Icon(Icons.medical_services_outlined),
           selectedIcon: Icon(Icons.medical_services),
           label: 'TeleDoc',
+        ),
+      ),
+      _Tab(
+        id: 'coach',
+        page: CoachThemed(
+          child: CoachHomeScreen(session: session, embedded: true),
+        ),
+        destination: const NavigationDestination(
+          icon: Icon(Icons.fitness_center_outlined),
+          selectedIcon: Icon(Icons.fitness_center),
+          label: 'Coach',
         ),
       ),
       _Tab(
