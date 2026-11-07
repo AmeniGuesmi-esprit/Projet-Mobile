@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import '../coach/coach_schema.dart';
 import '../foodsave/foodsave_schema.dart';
 import 'teledoc_schema.dart';
 
@@ -17,6 +18,7 @@ import 'teledoc_schema.dart';
 ///  - v5 : reservation (demandes de places sur un trajet)
 ///  - v6 : embarquement (QR code / Bluetooth) sur reservation + secret par trajet
 ///  - v7 : TeleDoc Express (teledoc_schema.dart, migration idempotente)
+///  - v8 : CoachProche (coach_schema.dart, tables créées si absentes)
 ///
 /// An existing v1 file is upgraded in place (no data is lost).
 class AppDatabase {
@@ -52,7 +54,8 @@ class AppDatabase {
   /// v5: reservation (demandes de places).
   /// v6: embarquement (QR code / Bluetooth).
   /// v7: TeleDoc Express.
-  static const int schemaVersion = 7;
+  /// v8: CoachProche.
+  static const int schemaVersion = 8;
 
   static OpenDatabaseOptions _options() => OpenDatabaseOptions(
         version: schemaVersion,
@@ -64,6 +67,7 @@ class AppDatabase {
           await _migrateToV3(db); // réservations (v5 de la base)
           await _migrateToV4(db); // embarquement (v6 de la base)
           await createTeledocSchema(db); // TeleDoc (v7 de la base)
+          await createCoachSchema(db); // CoachProche (v8 de la base)
         },
         onUpgrade: (db, oldVersion, newVersion) async {
           // FoodSave (ton ami)
@@ -82,6 +86,8 @@ class AppDatabase {
           if (oldVersion < 7) {
             await upgradeTeledocSchema(db, oldVersion, newVersion);
           }
+          // CoachProche : CREATE TABLE IF NOT EXISTS, sans risque.
+          if (oldVersion < 8) await createCoachSchema(db);
         },
       );
 
