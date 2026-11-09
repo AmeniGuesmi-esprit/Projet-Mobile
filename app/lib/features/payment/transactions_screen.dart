@@ -273,14 +273,21 @@ class _TransactionTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(isCredit ? '+ ' : '− ', style: amountStyle),
-                        MoneyText(
-                          transaction.montantCentimes,
-                          style: amountStyle,
-                        ),
-                      ],
+                    // Shrinks instead of overflowing next to a wide badge
+                    // (« CoachProche ») on a 360 dp screen.
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(isCredit ? '+ ' : '− ', style: amountStyle),
+                          MoneyText(
+                            transaction.montantCentimes,
+                            style: amountStyle,
+                          ),
+                        ],
+                      ),
                     ),
                     Text(
                       '${isCredit ? 'De' : 'À'} $counterparty · $formattedDate',
