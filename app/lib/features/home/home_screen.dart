@@ -14,6 +14,7 @@ import '../payment/payment_api.dart';
 import '../payment/payment_methods_screen.dart';
 import '../payment/transaction_detail_screen.dart';
 import '../service_now/service_now_hub_screen.dart';
+import '../coach/presentation/widgets/coach_entry_card.dart';
 import '../teledoc/presentation/widgets/teledoc_entry_card.dart';
 import 'service_entry_card.dart';
 import '../../core/live/live_refresh.dart';
@@ -172,6 +173,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
               ),
+            CoachEntryCard(session: session),
             const SizedBox(height: AppSpacing.xl),
             Text('Paiements', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.sm),

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:proxilife_server/src/auth/passwords.dart';
+import 'package:proxilife_server/src/coach/coach_seed.dart';
 import 'package:proxilife_server/src/db/teledoc_seed.dart';
 import 'package:proxilife_server/src/db/database.dart';
 import 'package:proxilife_server/src/config/server_config.dart';
@@ -500,6 +501,7 @@ Future<void> main() async {
   stdout.writeln(
       'fawzi.saidi@esprit.tn : NON seedé — inscription via SMTP (FawziSaidi2026)');
   stdout.writeln(await seedTeledoc(db.db));
+  stdout.writeln(await seedCoach(db.db, yasmineId));
 
   await db.close();
 }

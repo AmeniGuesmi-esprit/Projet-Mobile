@@ -1,3 +1,4 @@
+export 'src/coach/coach.dart';
 export 'src/dto/payment_method_dto.dart';
 export 'src/dto/reservation_dto.dart';
 export 'src/dto/transaction_dto.dart';
