@@ -102,6 +102,49 @@ const List<
     longitude: 10.1640,
     deGarde: false,
   ),
+  // Bizerte: lets a phone outside Tunis see nearby pharmacies.
+  (
+    nom: 'Pharmacie Bizerte Centre',
+    adresse: 'Avenue Habib Bourguiba, Bizerte',
+    telephone: '72 431 100',
+    latitude: 37.2744,
+    longitude: 9.8739,
+    deGarde: true,
+  ),
+  (
+    nom: 'Pharmacie de la Corniche',
+    adresse: 'Route de la Corniche, Bizerte',
+    telephone: '72 432 200',
+    latitude: 37.2905,
+    longitude: 9.8610,
+    deGarde: true,
+  ),
+  (
+    nom: 'Pharmacie de Zarzouna',
+    adresse: 'Avenue de la République, Zarzouna, Bizerte',
+    telephone: '72 433 300',
+    latitude: 37.2560,
+    longitude: 9.8820,
+    deGarde: true,
+  ),
+];
+
+/// Extra demo patients, to test the urgency ordering of the queue with
+/// several patients at once.
+const List<({String nom, String prenom, String email, String telephone})>
+    teledocDemoPatients = [
+  (
+    nom: 'Patient',
+    prenom: 'Deux',
+    email: 'patient2@proxilife.fr',
+    telephone: '20111222',
+  ),
+  (
+    nom: 'Patient',
+    prenom: 'Trois',
+    email: 'patient3@proxilife.fr',
+    telephone: '20333444',
+  ),
 ];
 
 /// Seeds TeleDoc demo data. Idempotent: doctors are upserted by e-mail,
@@ -146,10 +189,34 @@ Future<String> seedTeledoc(Database db) async {
     summary.writeln('  médecin     : #$id  ${doctor.email}');
   }
 
-  // ---- Pharmacies ----
-  final pharmacyCount = await _count(db, 'teledoc_pharmacie');
-  if (pharmacyCount == 0) {
-    for (final pharmacy in teledocDemoPharmacies) {
+  // ---- Patients de démo supplémentaires (rôle client) ----
+  for (final patient in teledocDemoPatients) {
+    final existing = await db.query('utilisateur',
+        columns: ['id'], where: 'email = ?', whereArgs: [patient.email]);
+    final id = existing.isNotEmpty
+        ? existing.first['id'] as int
+        : await db.insert('utilisateur', {
+            'nom': patient.nom,
+            'prenom': patient.prenom,
+            'email': patient.email,
+            'telephone': patient.telephone,
+            'mot_de_passe_hash': hasher.hashPassword('Proxilife2026!'),
+            'photo': null,
+            'role': UserRole.client.apiValue,
+            'statut_compte': AccountStatus.actif.apiValue,
+            'rib': null,
+            'solde_centimes': 0,
+            'cree_le': now.toIso8601String(),
+          });
+    summary.writeln('  patient     : #$id  ${patient.email}');
+  }
+
+  // ---- Pharmacies (ajoutées par nom : une base existante reçoit aussi
+  // les nouvelles pharmacies de démo) ----
+  for (final pharmacy in teledocDemoPharmacies) {
+    final existing = await db.query('teledoc_pharmacie',
+        columns: ['id'], where: 'nom = ?', whereArgs: [pharmacy.nom]);
+    if (existing.isEmpty) {
       await db.insert('teledoc_pharmacie', {
         'nom': pharmacy.nom,
         'adresse': pharmacy.adresse,
