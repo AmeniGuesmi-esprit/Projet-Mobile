@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
+import 'package:path/path.dart' as p;
 
 import 'auth/auth_middleware.dart';
 import 'auth/session_service.dart';
@@ -10,15 +11,18 @@ import 'db/database.dart';
 import 'email/email_sender.dart';
 import 'foodsave/foodsave_context.dart';
 import 'foodsave/foodsave_module.dart';
+import 'foodsave/services/route_planner.dart';
 import 'repositories/payment_method_repository.dart';
 import 'repositories/reservation_repository.dart';
 import 'repositories/transaction_repository.dart';
+import 'repositories/service_now_repository.dart';
 import 'repositories/trip_repository.dart';
 import 'repositories/user_repository.dart';
 import 'repositories/vehicle_repository.dart';
 import 'repositories/verification_repository.dart';
 import 'routes/auth_routes.dart';
 import 'routes/payment_routes.dart';
+import 'routes/service_now_routes.dart';
 import 'routes/reservation_routes.dart';
 import 'routes/teledoc_routes.dart';
 import 'routes/trip_routes.dart';
@@ -26,6 +30,9 @@ import 'routes/user_routes.dart';
 import 'services/auth_service.dart';
 import 'services/payment_service.dart';
 import 'services/reservation_service.dart';
+import 'services/service_now_service.dart';
+import 'services/service_now_geocoder.dart';
+import 'services/teledoc_photo_store.dart';
 import 'services/trip_service.dart';
 
 /// Wires repositories, services and routes into a single shelf [Handler].
@@ -38,6 +45,8 @@ Handler buildApp(
   bool logRequestsMiddleware = true,
   FoodSaveContext? foodSave,
   String uploadsDir = 'uploads',
+      AddressGeocoder? serviceNowGeocoder,
+      RoutePlanner? serviceNowRoutes,
 }) {
   final users = UserRepository(database.db);
   final verification = VerificationRepository(database.db);
@@ -65,7 +74,14 @@ Handler buildApp(
     trips: TripRepository(database.db),
     users: users,
   );
-
+  final serviceNow = ServiceNowService(
+    db: database.db,
+    repository: ServiceNowRepository(database.db),
+    payments: payments,
+    geocoder: serviceNowGeocoder ?? NominatimAddressSearch(),
+    routes: serviceNowRoutes ?? OsrmRoutePlanner(),
+    photos: TeledocPhotoStore(p.join(uploadsDir, 'service_now')),
+  );
   final foodSaveContext = foodSave ??
       FoodSaveContext(
         db: database.db,
@@ -94,7 +110,8 @@ Handler buildApp(
     ..mount('/', buildFoodSaveRouter(foodSaveContext).call)
     ..mount('/', buildTripRoutes(trips).call)
     ..mount('/', buildReservationRoutes(reservations).call)
-    ..mount('/', buildTeledocModule(database.db).call);
+    ..mount('/', buildTeledocModule(database.db).call)
+    ..mount('/', buildServiceNowRoutes(serviceNow).call);;
 
   final pipeline = Pipeline()
       .addMiddleware(requireAuth(sessions))

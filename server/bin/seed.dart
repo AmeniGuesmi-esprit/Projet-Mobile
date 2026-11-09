@@ -143,16 +143,95 @@ Future<void> main() async {
     rib: '10107001202025004281795',
     password: 'Ameni@123',
   );
+  final farahAmamiId = await upsertUser(
+    nom: 'Amami',
+    prenom: 'Farah',
+    email: 'farrahamami@gmail.com',
+    telephone: '23626912',
+    role: 'prestataire',
+    rib: '30004000011234567890173',
+    password: 'FarahAmami',
+  );
+  final karimId = await upsertUser(
+    nom: 'Trabelsi',
+    prenom: 'Karim',
+    email: 'prestataire@proxilife.fr',
+    telephone: '0655443322',
+    role: 'prestataire',
+    rib: '30004000011234567890173',
+  );
+
+  // ServiceNow: specialties and base location, for the smart matching.
+  Future<void> setProfile(
+      int? id,
+      String specialites,
+      double latitude,
+      double longitude,
+      ) async {
+    if (id == null) return;
+    await db.db.rawInsert(
+      'INSERT OR REPLACE INTO prestataire_profil '
+          '(utilisateur_id, specialites, latitude, longitude, modifie_le) '
+          'VALUES (?, ?, ?, ?, ?)',
+      [id, specialites, latitude, longitude,
+        DateTime.now().toUtc().toIso8601String()],
+    );
+  }
+
+  await setProfile(farahAmamiId, 'plomberie,bricolage,peinture', 36.8190, 10.1658);
+  await setProfile(karimId, 'electricite,climatisation', 36.8625, 10.1956);
+
+  // ServiceNow: two waiting requests, so the prestataire has work to pick.
+  final demandesCount = (await db.db.rawQuery(
+    'SELECT COUNT(*) AS c FROM demande_service WHERE client_id = ?',
+    [clientId],
+  ))
+      .first['c'] as int;
+  if (demandesCount == 0 && clientId != null) {
+    final stamp = DateTime.now().toUtc();
+    Future<void> addDemande(
+        String type,
+        String description,
+        String adresse,
+        int days,
+        ) =>
+        db.db.insert('demande_service', {
+          'client_id': clientId,
+          'type': type,
+          'description': description,
+          'adresse': adresse,
+          'date_souhaitee':
+          stamp.add(Duration(days: days)).toIso8601String(),
+          'statut': 'en_attente',
+          'cree_le': stamp.toIso8601String(),
+          'modifie_le': stamp.toIso8601String(),
+        });
+    await addDemande('plomberie', 'Fuite d\'eau sous l\'évier de la cuisine',
+        '12 rue de Marseille, Tunis', 2);
+    await addDemande('electricite', 'Prise du salon qui ne fonctionne plus',
+        '5 avenue Habib Bourguiba, Ariana', 4);
+  }
+
+  // Places the sample requests on the map, including those seeded earlier.
+  Future<void> locateSample(String adresse, double lat, double lng) =>
+      db.db.update(
+        'demande_service',
+        {'latitude': lat, 'longitude': lng},
+        where: 'adresse = ? AND latitude IS NULL',
+        whereArgs: [adresse],
+      );
+  await locateSample('12 rue de Marseille, Tunis', 36.8008, 10.1815);
+  await locateSample('5 avenue Habib Bourguiba, Ariana', 36.8665, 10.1647);
 
   // A couple of payment methods for the client, for demos.
   Future<int> addMethod(
-    int utilisateurId, {
-    required String type,
-    String? last4,
-    String? titulaire,
-    String? expiration,
-    bool parDefaut = false,
-  }) {
+      int utilisateurId, {
+        required String type,
+        String? last4,
+        String? titulaire,
+        String? expiration,
+        bool parDefaut = false,
+      }) {
     return db.db.insert('moyen_paiement', {
       'type': type,
       'quatre_derniers_chiffres': last4,
@@ -187,7 +266,7 @@ Future<void> main() async {
   // Balances are adjusted the way PaymentService would have.
   final commercantTxCount = (await db.db.rawQuery(
     'SELECT COUNT(*) AS c FROM transaction_ '
-    'WHERE utilisateur_id = ? OR beneficiaire_id = ?',
+        'WHERE utilisateur_id = ? OR beneficiaire_id = ?',
     [commercantId, commercantId],
   ))
       .first['c'] as int;
@@ -219,27 +298,27 @@ Future<void> main() async {
     final payments = <(int, int, int, int, String, String, String?, int)>[
       // (payer, beneficiary, method, cents, status, service, ref, daysAgo)
       (clientId, commercantId, clientCard, 4500, 'paye', 'FoodSave',
-          'Panier anti-gaspi #1042', 28),
+      'Panier anti-gaspi #1042', 28),
       (clientId, commercantId, clientCard, 12000, 'paye', 'ServiceNow',
-          'Livraison épicerie', 21),
+      'Livraison épicerie', 21),
       (clientId, commercantId, clientCard, 3250, 'rembourse', 'FoodSave',
-          'Panier #1057', 15),
+      'Panier #1057', 15),
       (commercantId, conducteurId, commercantCard, 1800, 'paye', 'EcoRoute',
-          'Course centre-ville', 12),
+      'Course centre-ville', 12),
       (clientId, commercantId, clientCard, 8900, 'paye', 'FoodSave',
-          'Commande #1063', 9),
+      'Commande #1063', 9),
       (clientId, commercantId, clientWallet, 20000, 'echoue', 'ServiceNow',
-          null, 6),
+      null, 6),
       (clientId, commercantId, clientCard, 15600, 'paye', 'ServiceNow',
-          'Installation vitrine', 2),
+      'Installation vitrine', 2),
       (clientId, commercantId, clientCard, 5000, 'en_attente', 'FoodSave',
-          'Commande #1071', 0),
+      'Commande #1071', 0),
     ];
 
     final soldeDelta = <int, int>{};
     await db.db.transaction((txn) async {
       for (final (payer, benef, method, cents, statut, service, ref, days)
-          in payments) {
+      in payments) {
         final date = DateTime.now().subtract(Duration(days: days, hours: 3));
         final nextId = (await txn.rawQuery(
           'SELECT COALESCE(MAX(id), 0) + 1 AS n FROM transaction_',
@@ -253,7 +332,7 @@ Future<void> main() async {
           'type_service': service,
           'id_reference': ref,
           'facture_numero':
-              'FAC-${date.year}-${nextId.toString().padLeft(6, '0')}',
+          'FAC-${date.year}-${nextId.toString().padLeft(6, '0')}',
           'utilisateur_id': payer,
           'beneficiaire_id': benef,
           'moyen_paiement_id': method,
@@ -268,7 +347,7 @@ Future<void> main() async {
       for (final MapEntry(key: userId, value: delta) in soldeDelta.entries) {
         await txn.rawUpdate(
           'UPDATE utilisateur SET solde_centimes = solde_centimes + ? '
-          'WHERE id = ?',
+              'WHERE id = ?',
           [delta, userId],
         );
       }
@@ -286,8 +365,8 @@ Future<void> main() async {
 
     await db.db.rawInsert(
       'INSERT OR IGNORE INTO commerce (commercant_id, nom, adresse, latitude, '
-      'longitude, categorie, cree_le, mis_a_jour_le) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          'longitude, categorie, cree_le, mis_a_jour_le) '
+          'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [
         commercantId,
         'Boulangerie Ameni',
@@ -309,8 +388,8 @@ Future<void> main() async {
       if (userId == null) continue;
       await db.db.rawInsert(
         'INSERT OR IGNORE INTO localisation_client '
-        '(utilisateur_id, latitude, longitude, mis_a_jour_le) '
-        'VALUES (?, ?, ?, ?)',
+            '(utilisateur_id, latitude, longitude, mis_a_jour_le) '
+            'VALUES (?, ?, ?, ?)',
         [userId, lat, lng, nowIso],
       );
     }
@@ -322,64 +401,64 @@ Future<void> main() async {
         .first['c'] as int;
     if (basketCount == 0) {
       final baskets = <(String, String, String, int, int, int, int, String,
-          Duration, Duration, Duration)>[
+      Duration, Duration, Duration)>[
         // (titre, contenu, categorie, prix, prix initial, quantite,
         //  quantite initiale, statut, début, fin, expiration)
         (
-          'Panier du soir',
-          'Baguettes, pain complet et 2 viennoiseries du jour',
-          'boulangerie',
-          500,
-          1500,
-          5,
-          5,
-          'disponible',
-          const Duration(hours: 2),
-          const Duration(hours: 4),
-          const Duration(hours: 6),
+        'Panier du soir',
+        'Baguettes, pain complet et 2 viennoiseries du jour',
+        'boulangerie',
+        500,
+        1500,
+        5,
+        5,
+        'disponible',
+        const Duration(hours: 2),
+        const Duration(hours: 4),
+        const Duration(hours: 6),
         ),
         (
-          'Douceurs du matin',
-          'Croissants, pains au chocolat et une part de tarte',
-          'patisserie',
-          600,
-          1800,
-          3,
-          3,
-          'disponible',
-          const Duration(hours: 18),
-          const Duration(hours: 20),
-          const Duration(hours: 22),
+        'Douceurs du matin',
+        'Croissants, pains au chocolat et une part de tarte',
+        'patisserie',
+        600,
+        1800,
+        3,
+        3,
+        'disponible',
+        const Duration(hours: 18),
+        const Duration(hours: 20),
+        const Duration(hours: 22),
         ),
         (
-          'Panier mixte surprise',
-          'Pain, fromage frais, yaourts et fruits de saison',
-          'mixte',
-          800,
-          2500,
-          2,
-          2,
-          'disponible',
-          const Duration(hours: 1),
-          const Duration(hours: 3),
-          const Duration(hours: 5),
+        'Panier mixte surprise',
+        'Pain, fromage frais, yaourts et fruits de saison',
+        'mixte',
+        800,
+        2500,
+        2,
+        2,
+        'disponible',
+        const Duration(hours: 1),
+        const Duration(hours: 3),
+        const Duration(hours: 5),
         ),
         (
-          'Pain de la veille',
-          'Lot de 4 baguettes de la veille, idéales pour le pain perdu',
-          'boulangerie',
-          200,
-          700,
-          0,
-          4,
-          'epuise',
-          const Duration(hours: 1),
-          const Duration(hours: 5),
-          const Duration(hours: 8),
+        'Pain de la veille',
+        'Lot de 4 baguettes de la veille, idéales pour le pain perdu',
+        'boulangerie',
+        200,
+        700,
+        0,
+        4,
+        'epuise',
+        const Duration(hours: 1),
+        const Duration(hours: 5),
+        const Duration(hours: 8),
         ),
       ];
       for (final (titre, contenu, categorie, prix, prixInitial, quantite,
-          quantiteInitiale, statut, debut, fin, expiration) in baskets) {
+      quantiteInitiale, statut, debut, fin, expiration) in baskets) {
         await db.db.insert('panier', {
           'titre': titre,
           'contenu': contenu,

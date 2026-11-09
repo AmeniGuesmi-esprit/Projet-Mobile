@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../foodsave/foodsave_schema.dart';
+import 'service_now_schema.dart';
 import 'teledoc_schema.dart';
 
 /// Opens (and migrates) the ProxiLife SQLite database.
@@ -52,12 +53,13 @@ class AppDatabase {
   /// v5: reservation (demandes de places).
   /// v6: embarquement (QR code / Bluetooth).
   /// v7: TeleDoc Express.
-  static const int schemaVersion = 7;
+  static const int schemaVersion = 8;
 
   static OpenDatabaseOptions _options() => OpenDatabaseOptions(
-        version: schemaVersion,
-        onConfigure: _enableForeignKeys,
-        onCreate: (db, version) async {
+    version: schemaVersion,
+    onConfigure: _enableForeignKeys,
+    onOpen: (db) => createServiceNowSchema(db),
+    onCreate: (db, version) async  {
           // _createSchemaV1 crée aussi les tables FoodSave (dernière version).
           await _createSchemaV1(db);
           await _migrateToV2(db); // covoiturage  (v4 de la base)

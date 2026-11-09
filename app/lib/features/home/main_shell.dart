@@ -5,6 +5,7 @@ import '../foodsave/platform/foodsave_hub_screen.dart';
 import '../foodsave/platform/foodsave_notification_poller.dart';
 import '../payment/payments_screen.dart';
 import '../profile/profile_screen.dart';
+import '../service_now/service_now_hub_screen.dart';
 import '../teledoc/presentation/screens/teledoc_home_screen.dart';
 import '../trips/covoiturage_hub_screen.dart';
 import 'home_screen.dart';
@@ -20,7 +21,7 @@ class _Tab {
 }
 
 /// Root scaffold with the bottom navigation.
-///  Accueil · Paiements · FoodSave · Covoiturage · TeleDoc · Profil, for every
+///  Accueil · Paiements · FoodSave · Covoiturage · TeleDoc · ServiceNow · Profil, for every
 ///  role. Covoiturage: Mes trajets · Demandes for drivers, Rechercher ·
 ///  Réservations for everyone else ([CovoiturageHubScreen]). TeleDoc: the
 ///  doctor space for médecins, the patient space for everyone else.
@@ -108,6 +109,18 @@ class _MainShellState extends State<MainShell> {
           icon: Icon(Icons.medical_services_outlined),
           selectedIcon: Icon(Icons.medical_services),
           label: 'TeleDoc',
+        ),
+      ),
+      _Tab(
+        id: 'servicenow',
+        page: ServiceNowHubScreen(
+          session: session,
+          visit: _visits['servicenow'] ?? 0,
+        ),
+        destination: const NavigationDestination(
+          icon: Icon(Icons.build_outlined),
+          selectedIcon: Icon(Icons.build),
+          label: 'ServiceNow',
         ),
       ),
       _Tab(

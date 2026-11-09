@@ -13,6 +13,7 @@ import 'features/auth/register_screen.dart';
 import 'features/foodsave/platform/foodsave_hub_screen.dart';
 import 'features/foodsave/platform/foodsave_navigation.dart';
 import 'features/foodsave/platform/foodsave_notification_poller.dart';
+import 'features/service_now/service_now_notification_poller.dart';
 import 'features/foodsave/platform/location_service.dart';
 import 'features/home/main_shell.dart';
 
@@ -25,8 +26,11 @@ Future<void> main() async {
   );
   await NotificationService.instance.init();
   // Taps on local notifications (FoodSave payloads) open the target screen.
-  NotificationService.instance.onTap =
-      (payload) => openFoodSavePayload(payload, session);
+  NotificationService.instance.onTap = (payload) {
+    if (!openServiceNowPayload(payload, session)) {
+      openFoodSavePayload(payload, session);
+    }
+  };
   runApp(ProxiLifeApp(session: session));
 }
 
@@ -90,6 +94,7 @@ class _SplashGateState extends State<SplashGate> {
   void dispose() {
     widget.session.removeListener(_onSessionChanged);
     FoodSaveNotificationPoller.instance.stop();
+    ServiceNowNotificationPoller.instance.stop();
     super.dispose();
   }
 
@@ -101,10 +106,14 @@ class _SplashGateState extends State<SplashGate> {
     if (session.status == SessionStatus.authenticated && session.user != null) {
       _wasAuthenticated = true;
       FoodSaveNotificationPoller.instance.start(session);
+      ServiceNowNotificationPoller.instance.start(session);
       final payload = NotificationService.instance.takeLaunchPayload();
       if (payload != null) {
-        WidgetsBinding.instance.addPostFrameCallback(
-            (_) => openFoodSavePayload(payload, session));
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!openServiceNowPayload(payload, session)) {
+            openFoodSavePayload(payload, session);
+          }
+        });
       }
     } else if (session.status == SessionStatus.unauthenticated &&
         _wasAuthenticated) {
@@ -112,6 +121,7 @@ class _SplashGateState extends State<SplashGate> {
       // Signed out: start again from the landing page.
       if (mounted) setState(() => _showLanding = true);
       FoodSaveNotificationPoller.instance.stop();
+      ServiceNowNotificationPoller.instance.stop();
       FoodSaveLocationService.instance.reset();
       FoodSaveHubScreen.resetSessionState();
     }
