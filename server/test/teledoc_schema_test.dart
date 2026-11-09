@@ -182,9 +182,15 @@ CREATE TABLE teledoc_consultation (id INTEGER PRIMARY KEY, date_debut TEXT,
       expect(doctor['statut_compte'], 'actif');
       expect(doctor['rib'], hasLength(23));
     }
-    expect(await db.query('teledoc_pharmacie'), hasLength(8));
+    expect(await db.query('teledoc_pharmacie'), hasLength(11));
     expect(await db.query('teledoc_pharmacie', where: 'de_garde = 1'),
-        hasLength(7));
+        hasLength(10));
+    for (final email in ['patient2@proxilife.fr', 'patient3@proxilife.fr']) {
+      final rows =
+          await db.query('utilisateur', where: 'email = ?', whereArgs: [email]);
+      expect(rows, hasLength(1), reason: email);
+      expect(rows.single['role'], 'client');
+    }
     expect(await db.query('teledoc_demande'), hasLength(2));
     expect(await db.query('teledoc_consultation'), hasLength(1));
     await database.close();

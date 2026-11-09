@@ -469,12 +469,26 @@ void main() {
           token: patient);
       expect(status, 200);
       final items = (body['items'] as List).cast<Map<String, dynamic>>();
-      expect(items, hasLength(7));
+      expect(items, hasLength(10));
       expect(items.first['nom'], 'Pharmacie de La Marsa');
       expect(items.first['distance_km'], lessThan(1));
       final distances = items.map((i) => i['distance_km'] as num).toList();
       expect(distances, orderedEquals([...distances]..sort()));
       expect(items.any((i) => i['nom'] == 'Pharmacie Bab Saadoun'), isFalse);
+    });
+
+    test('depuis Bizerte : les pharmacies de Bizerte en premier', () async {
+      await server.insertPharmacies();
+      final (status, body) = await server.call(
+          'GET', '/teledoc/pharmacies/on-duty?lat=37.2746&lng=9.8627&limit=3',
+          token: patient);
+      expect(status, 200);
+      final items = (body['items'] as List).cast<Map<String, dynamic>>();
+      expect(items, hasLength(3));
+      for (final item in items) {
+        expect(item['adresse'], contains('Bizerte'));
+        expect(item['distance_km'], lessThan(5));
+      }
     });
 
     test('limit et coordonnées validés', () async {
