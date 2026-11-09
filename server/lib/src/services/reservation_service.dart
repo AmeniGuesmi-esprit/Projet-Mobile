@@ -194,7 +194,7 @@ class ReservationService {
   // his GPS position; the server checks that he is at the departure point,
   // inside the boarding window, and that the reservation is accepted.
 
-  static const Duration codeStep = Duration(seconds: 30);
+  static const Duration codeStep = Duration(seconds: 60);
   static const Duration boardingOpensBefore = Duration(minutes: 30);
   static const Duration boardingClosesAfter = Duration(minutes: 60);
   static const double maxBoardingDistanceKm = 0.5;
