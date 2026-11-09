@@ -119,6 +119,9 @@ SERVER_PORT=8080
 | flutter_local_notifications | ^22.3.1 | app |
 | intl | ^0.20.3 | app |
 | url_launcher | ^6.3.3 | app (FoodSave: open directions in Google Maps) |
+| sqflite | ^2.4.5 | app (TeleDoc: offline consultation history, D45) |
+| path | ^1.9.1 | app (sqflite database path) |
+| sqflite_common_ffi | ^2.4.3 | app dev_dependency (sqflite in `flutter test`) |
 
 (If a newer version is on pub.dev but younger than 7 days at install time, pin
 the previous one.)

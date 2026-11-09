@@ -34,11 +34,16 @@ dependencies:
   flutter_ble_peripheral: ^3.1.0
   # CoachProche: compteur de pas (accéléromètre)
   sensors_plus: ^6.1.1
+  # TeleDoc: historique des consultations sur le téléphone (lecture hors ligne)
+  sqflite: ^2.4.5
+  path: ^1.9.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # TeleDoc: sqflite sur le PC pour flutter test
+  sqflite_common_ffi: ^2.4.3
 
 flutter:
   uses-material-design: true
