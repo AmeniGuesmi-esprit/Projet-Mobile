@@ -8,21 +8,23 @@ import '../repositories/user_repository.dart';
 
 /// Business rules for payment methods and internal transactions.
 ///
-/// Money semantics per payment method type (single source of truth):
-/// - carte_bancaire : simulated bank charge, immediately `paye`; the
-///   beneficiary's internal wallet is credited.
-/// - portefeuille : debits the payer's internal wallet, credited to the
-///   beneficiary; insufficient balance yields an `echoue` record with no
-///   money moved. The balance is re-checked **inside** the SQL transaction.
-/// - especes : cash physically changes hands, so the transaction is created
-///   `en_attente` with **no internal movement**. The beneficiary confirms
-///   receipt (`en_attente -> paye`); the payer may cancel while pending.
+/// Money semantics (single source of truth): every settled payment moves the
+/// internal wallet the same way, whatever the method — the payer is debited,
+/// the beneficiary is credited, and the payer's balance must always cover
+/// the amount (the balance never goes negative):
+/// - portefeuille / carte_bancaire : settled immediately (`paye`); the
+///   balance is re-checked **inside** the SQL transaction — insufficient
+///   balance yields an `echoue` record with no money moved.
+/// - especes : created `en_attente` with **no movement yet** (creation is
+///   refused when the payer can't cover the amount). The beneficiary's
+///   confirmation (`en_attente -> paye`) debits the payer and credits the
+///   beneficiary, re-checking the balance inside the transaction; the payer
+///   may cancel while pending (no movement).
+/// - counter payments (no method, paid at the till) are recorded directly
+///   as `paye` and settled like the others.
 ///
-/// Refunds mirror the original method:
-/// - portefeuille : symmetric reversal (beneficiary debited, payer credited).
-/// - carte_bancaire : the bank reverses the charge, so only the beneficiary
-///   is debited internally; the payer is reimbursed "on their card".
-/// - especes : status change only — cash is handed back physically.
+/// Refunds are always the exact symmetric reversal: the beneficiary is
+/// debited (they must still hold the amount) and the payer is credited.
 class PaymentService {
   PaymentService({
     required Database db,
@@ -216,30 +218,31 @@ class PaymentService {
     final methodType =
         PaymentMethodType.parse(methodRow['type'] as String);
     final beneficiaireId = beneficiaire['id'] as int;
-    final useWallet = methodType == PaymentMethodType.portefeuille;
     final isCash = methodType == PaymentMethodType.especes;
 
     late int transactionId;
     await _db.transaction((txn) async {
-      // Cash waits for the beneficiary's confirmation; the wallet balance is
-      // re-checked inside the transaction so concurrent payments can't
-      // overdraw it.
+      // The balance is re-checked inside the transaction so concurrent
+      // payments can't overdraw it. Cash waits for the beneficiary's
+      // confirmation (no movement yet, but the payer must already cover the
+      // amount); wallet and card settle immediately.
+      final solde = await users.soldeOfId(txn, payerId);
+      final hasEnough = solde >= montantCentimes;
       TransactionStatus finalStatus;
       if (isCash) {
+        if (!hasEnough) {
+          throw ApiError.badRequest(
+              'Solde insuffisant pour ce paiement en espèces');
+        }
         finalStatus = TransactionStatus.enAttente;
-      } else if (useWallet) {
-        final solde = await users.soldeOfId(txn, payerId);
-        finalStatus = solde >= montantCentimes
+      } else {
+        finalStatus = hasEnough
             ? TransactionStatus.paye
             : TransactionStatus.echoue;
-      } else {
-        finalStatus = TransactionStatus.paye;
       }
 
       if (finalStatus == TransactionStatus.paye) {
-        if (useWallet) {
-          await users.addSolde(txn, payerId, -montantCentimes);
-        }
+        await users.addSolde(txn, payerId, -montantCentimes);
         await users.addSolde(txn, beneficiaireId, montantCentimes);
       }
 
@@ -277,8 +280,8 @@ class PaymentService {
   }
 
   /// A payment handed over in person and confirmed by the beneficiary
-  /// (e.g. cash at the counter): recorded `paye`, with no internal wallet
-  /// movement since the money is already in the beneficiary's hands.
+  /// (e.g. cash at the counter): recorded `paye` and settled like any
+  /// other payment — the payer is debited, the beneficiary credited.
   Future<TransactionDto> recordCounterPayment({
     required int payerId,
     required int beneficiaryId,
@@ -291,6 +294,12 @@ class PaymentService {
     }
     late int transactionId;
     await _db.transaction((txn) async {
+      final solde = await users.soldeOfId(txn, payerId);
+      if (solde < montantCentimes) {
+        throw ApiError.badRequest('Solde insuffisant pour ce paiement');
+      }
+      await users.addSolde(txn, payerId, -montantCentimes);
+      await users.addSolde(txn, beneficiaryId, montantCentimes);
       transactionId = await txn.insert('transaction_', {
         'montant_centimes': montantCentimes,
         'devise': 'TND',
@@ -333,8 +342,9 @@ class PaymentService {
   }
 
   /// enAttente → paye. Only the beneficiary (or an admin) confirms, and only
-  /// cash transactions ever wait: nothing internal moves at confirmation,
-  /// the cash was settled physically.
+  /// cash transactions ever wait. Confirmation settles the payment: the
+  /// payer is debited and the beneficiary credited, with the payer's balance
+  /// re-checked inside the SQL transaction.
   Future<TransactionDto> confirm(
       int id, int requesterId, UserRole requesterRole) async {
     final row = await transactions.findById(id);
@@ -349,12 +359,33 @@ class PaymentService {
       throw ApiError.conflict(
           'Seule une transaction en attente peut être confirmée');
     }
-    await transactions.updateStatus(id, TransactionStatus.paye);
+    // All statements go through the transaction object: using the outer
+    // database handle inside an open transaction deadlocks sqflite.
+    await _db.transaction((txn) async {
+      if (row['mp_type'] == PaymentMethodType.especes.apiValue) {
+        final payerId = row['utilisateur_id'] as int?;
+        if (payerId == null || beneficiaireId == null) {
+          throw ApiError.conflict(
+              'Transaction anonymisée : confirmation impossible');
+        }
+        final amount = row['montant_centimes'] as int;
+        final solde = await users.soldeOfId(txn, payerId);
+        if (solde < amount) {
+          throw ApiError.conflict(
+              'Solde du payeur insuffisant pour confirmer ce paiement');
+        }
+        await users.addSolde(txn, payerId, -amount);
+        await users.addSolde(txn, beneficiaireId, amount);
+      }
+      await txn.update('transaction_',
+          {'statut': TransactionStatus.paye.apiValue},
+          where: 'id = ?', whereArgs: [id]);
+    });
     return getTransaction(id, requesterId, requesterRole);
   }
 
-  /// paye → rembourse. Initiated by the payer (or an admin). Money moves
-  /// according to the original method (see class doc).
+  /// paye → rembourse. Initiated by the payer (or an admin). Always the
+  /// symmetric reversal of the settlement (see class doc).
   Future<TransactionDto> refund(
       int id, int requesterId, UserRole requesterRole) async {
     final row = await transactions.findById(id);
@@ -380,29 +411,19 @@ class PaymentService {
       throw ApiError.conflict(
           'Transaction anonymisée : remboursement impossible');
     }
-    final methodType = row['mp_type'] == null
-        ? null
-        : PaymentMethodType.parse(row['mp_type'] as String);
 
     // All statements go through the transaction object: using the outer
     // database handle inside an open transaction deadlocks sqflite.
+    // Every settled payment moved the wallet the same way (see the class
+    // doc), so a refund is always the exact symmetric reversal.
     await _db.transaction((txn) async {
-      if (methodType == PaymentMethodType.portefeuille ||
-          methodType == PaymentMethodType.carteBancaire) {
-        final benefSolde = await users.soldeOfId(txn, beneficiaireId);
-        if (benefSolde < amount) {
-          throw ApiError.conflict(
-              'Solde du bénéficiaire insuffisant pour le remboursement');
-        }
-        await users.addSolde(txn, beneficiaireId, -amount);
-        if (methodType == PaymentMethodType.portefeuille) {
-          // Wallet refund: exact reversal. Card refund: the payer is
-          // reimbursed by the (simulated) bank on their card, so no
-          // internal credit happens here.
-          await users.addSolde(txn, payerId, amount);
-        }
+      final benefSolde = await users.soldeOfId(txn, beneficiaireId);
+      if (benefSolde < amount) {
+        throw ApiError.conflict(
+            'Solde du bénéficiaire insuffisant pour le remboursement');
       }
-      // Cash: nothing internal ever moved — status change only.
+      await users.addSolde(txn, beneficiaireId, -amount);
+      await users.addSolde(txn, payerId, amount);
       await txn.update('transaction_',
           {'statut': TransactionStatus.rembourse.apiValue},
           where: 'id = ?', whereArgs: [id]);

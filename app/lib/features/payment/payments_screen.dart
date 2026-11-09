@@ -28,13 +28,18 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
     );
     if (created == true) {
       _txKey.currentState?.reload();
+      await widget.session.refreshUser();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: TransactionsScreen(key: _txKey, api: widget.session.api),
+      body: TransactionsScreen(
+        key: _txKey,
+        api: widget.session.api,
+        refreshUser: widget.session.refreshUser,
+      ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'paiementFab',
         backgroundColor: AppColors.accent,

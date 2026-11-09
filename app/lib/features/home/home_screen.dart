@@ -270,6 +270,8 @@ class _RecentTransactionsState extends State<_RecentTransactions>
                       ),
                     );
                     _reload();
+                    // A refund in the detail screen moves the wallet.
+                    await widget.refreshUser?.call();
                   },
                 ),
               ),

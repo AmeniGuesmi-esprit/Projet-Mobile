@@ -16,9 +16,12 @@ import 'widgets/direction_badge.dart';
 import '../../core/live/live_refresh.dart';
 
 class TransactionsScreen extends StatefulWidget {
-  const TransactionsScreen({super.key, required this.api});
+  const TransactionsScreen({super.key, required this.api, this.refreshUser});
 
   final ApiClient api;
+
+  /// Refreshes the session user (balance card) after detail-screen actions.
+  final Future<void> Function()? refreshUser;
 
   @override
   State<TransactionsScreen> createState() => TransactionsScreenState();
@@ -188,7 +191,11 @@ class TransactionsScreenState extends State<TransactionsScreen>
                     itemBuilder: (context, i) => _TransactionTile(
                       transaction: items[i],
                       api: widget.api,
-                      onChanged: _reload,
+                      // A refund in the detail screen moves the wallet.
+                      onChanged: () async {
+                        _reload();
+                        await widget.refreshUser?.call();
+                      },
                     ),
                   ),
                 );

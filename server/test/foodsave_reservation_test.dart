@@ -677,7 +677,10 @@ void main() {
       expect((await h.reservationRow(dto.id))['statut'], 'retire');
       expect((await h.reservationRow(dto.id))['statut_paiement'], 'paye');
       expect(await txStatus(dto.transactionId), 'paye');
-      expect(await h.soldeOf(merchant.id), 0); // cash is in hand
+      // Cash confirmation settles like every method: client debited,
+      // merchant credited.
+      expect(await h.soldeOf(merchant.id), 1000);
+      expect(await h.soldeOf(client.id), 100000 - 1000);
     });
 
     test('card paid: accepted at once; refunded before pickup: pay again',

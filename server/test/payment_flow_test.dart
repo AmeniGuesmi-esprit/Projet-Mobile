@@ -214,8 +214,7 @@ void main() {
       return (p.$1, p.$2, pro.$2);
     }
 
-    test('wallet payment settles both balances; credit card is simulated',
-        () async {
+    test('wallet payment settles both balances', () async {
       final (token, payerId, proId) = await base();
 
       await ts.call('POST', '/payment-methods',
@@ -253,6 +252,56 @@ void main() {
       expect(json['statut'], 'echoue');
 
       // Balances unchanged.
+      expect(await ts.soldeOf(payerId), 5000);
+      expect(await ts.soldeOf(proId), 0);
+    });
+
+    test('card payment settles both balances like the wallet', () async {
+      final (token, payerId, proId) = await base();
+      await ts.call('POST', '/payment-methods',
+          token: token,
+          body: {
+            'type': 'carte_bancaire',
+            'numero_carte': validCard,
+            'nom_titulaire': 'JOHN DOE',
+            'date_expiration': '10/29',
+          });
+
+      final (status, json) = await ts.call('POST', '/transactions',
+          token: token,
+          body: {
+            'montant_centimes': 2599,
+            'beneficiaire_email': 'pro@test.fr',
+            'type_service': 'EcoRoute',
+          });
+      expect(status, 201);
+      expect(json['statut'], 'paye');
+      expect(await ts.soldeOf(payerId), 5000 - 2599);
+      expect(await ts.soldeOf(proId), 2599);
+    });
+
+    test('insufficient balance yields an echoue card payment too', () async {
+      final (token, payerId, proId) = await base();
+      await ts.call('POST', '/payment-methods',
+          token: token,
+          body: {
+            'type': 'carte_bancaire',
+            'numero_carte': validCard,
+            'nom_titulaire': 'JOHN DOE',
+            'date_expiration': '10/29',
+          });
+
+      final (status, json) = await ts.call('POST', '/transactions',
+          token: token,
+          body: {
+            'montant_centimes': 99999,
+            'beneficiaire_email': 'pro@test.fr',
+            'type_service': 'EcoRoute',
+          });
+      expect(status, 201);
+      expect(json['statut'], 'echoue');
+
+      // Balances unchanged, never negative.
       expect(await ts.soldeOf(payerId), 5000);
       expect(await ts.soldeOf(proId), 0);
     });
@@ -499,7 +548,7 @@ void main() {
         return (p.$1, pro.$1, p.$2, pro.$2, json['id'] as int);
       }
 
-      test('pending cash moves nothing; beneficiary confirms receipt',
+      test('pending cash moves nothing; confirmation settles both balances',
           () async {
         final (pToken, proToken, payerId, proId, txId) = await setupCashTx();
         expect(await ts.soldeOf(payerId), 1000);
@@ -518,15 +567,57 @@ void main() {
         expect(confirmJson['statut'], 'paye');
         expect(confirmJson['direction'], 'credit');
 
-        // Still no internal movement: cash was settled physically.
-        expect(await ts.soldeOf(payerId), 1000);
-        expect(await ts.soldeOf(proId), 0);
+        // Confirmation settles: payer debited, beneficiary credited.
+        expect(await ts.soldeOf(payerId), 1000 - 800);
+        expect(await ts.soldeOf(proId), 800);
 
         // Confirming twice is refused.
         final (again, _) = await ts.call(
             'PATCH', '/transactions/$txId/status',
             token: proToken, body: {'statut': 'paye'});
         expect(again, 409);
+      });
+
+      test('cash creation requires enough balance; confirmation re-checks it',
+          () async {
+        final p = await ts.registerLogin(email: 'cash-payer@test.fr',
+            solde: 1000);
+        final pro = await ts.registerLogin(
+            email: 'cash-pro@test.fr', role: 'conducteur', rib: validRib);
+        await ts.call('POST', '/payment-methods',
+            token: p.$1, body: {'type': 'especes'});
+
+        // Beyond the payer's balance: refused at creation (400).
+        final (tooMuch, tooMuchBody) = await ts.call(
+            'POST', '/transactions',
+            token: p.$1,
+            body: {
+              'montant_centimes': 100000,
+              'beneficiaire_email': 'cash-pro@test.fr',
+              'type_service': 'EcoRoute',
+            });
+        expect(tooMuch, 400);
+        expect(tooMuchBody['error'], contains('Solde insuffisant'));
+
+        // Created while covered, then the balance drops: confirmation is
+        // refused (409) and nothing moves.
+        final (ok, cashTx) = await ts.call('POST', '/transactions',
+            token: p.$1,
+            body: {
+              'montant_centimes': 800,
+              'beneficiaire_email': 'cash-pro@test.fr',
+              'type_service': 'EcoRoute',
+            });
+        expect(ok, 201);
+        final txId = cashTx['id'] as int;
+        await ts._db.db.update('utilisateur', {'solde_centimes': 0},
+            where: 'id = ?', whereArgs: [p.$2]);
+        final (confirmStatus, _) = await ts.call(
+            'PATCH', '/transactions/$txId/status',
+            token: pro.$1, body: {'statut': 'paye'});
+        expect(confirmStatus, 409);
+        expect(await ts.soldeOf(p.$2), 0);
+        expect(await ts.soldeOf(pro.$2), 0);
       });
 
       test('payer cancels a pending cash transaction (deleted)', () async {
@@ -557,25 +648,28 @@ void main() {
         expect(body['error'], contains('en attente'));
       });
 
-      test('cash refund only changes the status (no internal movement)',
-          () async {
+      test('cash refund symmetrically reverses the settlement', () async {
         final (pToken, proToken, payerId, proId, txId) = await setupCashTx();
         final (confirmStatus, _) = await ts.call(
             'PATCH', '/transactions/$txId/status',
             token: proToken, body: {'statut': 'paye'});
         expect(confirmStatus, 200);
+        // Confirmation settled: payer 200, beneficiary 800.
+        expect(await ts.soldeOf(payerId), 200);
+        expect(await ts.soldeOf(proId), 800);
 
         final (refundStatus, refundJson) = await ts.call(
             'PATCH', '/transactions/$txId/status',
             token: pToken, body: {'statut': 'rembourse'});
         expect(refundStatus, 200);
         expect(refundJson['statut'], 'rembourse');
+        // Exact symmetric reversal.
         expect(await ts.soldeOf(payerId), 1000);
         expect(await ts.soldeOf(proId), 0);
       });
     });
 
-    test('card refund debits only the beneficiary (bank reversal simulated)',
+    test('card refund is the symmetric reversal, like every method',
         () async {
       final p = await ts.registerLogin(email: 'payer@test.fr', solde: 5000);
       final pro = await ts.registerLogin(
@@ -597,8 +691,8 @@ void main() {
           });
       expect(status, 201);
       expect(json['statut'], 'paye');
-      // Card charge is external: payer wallet untouched, pro credited.
-      expect(await ts.soldeOf(p.$2), 5000);
+      // Uniform settlement: payer debited, beneficiary credited.
+      expect(await ts.soldeOf(p.$2), 5000 - 2000);
       expect(await ts.soldeOf(pro.$2), 2000);
 
       final (refundStatus, refundJson) = await ts.call(
@@ -606,7 +700,7 @@ void main() {
           token: p.$1, body: {'statut': 'rembourse'});
       expect(refundStatus, 200);
       expect(refundJson['statut'], 'rembourse');
-      // The payer is NOT credited internally (reimbursed on their card).
+      // Symmetric reversal: payer credited back, beneficiary debited.
       expect(await ts.soldeOf(p.$2), 5000);
       expect(await ts.soldeOf(pro.$2), 0);
     });

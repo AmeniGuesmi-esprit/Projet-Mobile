@@ -81,7 +81,8 @@ void main() {
         clock: () => now,
       ));
 
-      Future<int> user(String email, String role) => db.insert('utilisateur', {
+      Future<int> user(String email, String role, {int solde = 0}) =>
+          db.insert('utilisateur', {
             'nom': 'Guesmi',
             'prenom': 'Ameni',
             'email': email,
@@ -90,11 +91,12 @@ void main() {
             'role': role,
             'statut_compte': 'actif',
             'rib': role == 'client' ? null : '30004000011234567890173',
-            'solde_centimes': 0,
+            'solde_centimes': solde,
             'cree_le': now.toIso8601String(),
           });
       final merchantId = await user('commerce@test.fr', 'commercant');
-      clientId = await user('client@test.fr', 'client');
+      // Cash creation is refused when the payer can't cover the amount.
+      clientId = await user('client@test.fr', 'client', solde: 5000);
       await db.insert('commerce', {
         'commercant_id': merchantId,
         'nom': 'Boulangerie <Ennour>',

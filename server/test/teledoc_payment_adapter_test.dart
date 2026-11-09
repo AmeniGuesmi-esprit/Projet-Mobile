@@ -37,6 +37,9 @@ void main() {
       transactions: TransactionRepository(db),
     );
     patient = await insertTestUser(db, 'patient@test.tn', 'client');
+    // Every method requires enough wallet balance (payment module rule).
+    await db.update('utilisateur', {'solde_centimes': 100000},
+        where: 'id = ?', whereArgs: [patient]);
     // Beneficiary account (to agree on with Fawzi): active, with a RIB.
     platform = await insertTestUser(db, 'teledoc@test.tn', 'medecin');
     gateway = PaymentServiceTeledocGateway(
@@ -99,6 +102,8 @@ void main() {
   });
 
   test('portefeuille insuffisant : refus', () async {
+    await database.db.update('utilisateur', {'solde_centimes': 0},
+        where: 'id = ?', whereArgs: [patient]);
     await payments.addMethod(patient, type: PaymentMethodType.portefeuille);
     expect(
       () => gateway.charge(patientId: patient, amountCents: 3000, requestId: 1),

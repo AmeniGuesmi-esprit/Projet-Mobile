@@ -109,7 +109,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       } else {
         await NotificationService.instance.show(
           title: 'Paiement échoué',
-          body: 'Solde du portefeuille insuffisant',
+          body: 'Solde insuffisant',
         );
       }
       if (!mounted) return;
@@ -140,7 +140,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                 '${MoneyText.format(cents)} vers ${tx.beneficiaireNom ?? tx.beneficiaireEmail ?? ''}\nFacture ${tx.factureNumero}',
               TransactionStatus.enAttente =>
                 'Remettez ${MoneyText.format(cents)} en espèces à ${tx.beneficiaireNom ?? 'au bénéficiaire'} : la transaction passera à « Payé » lorsque le bénéficiaire aura confirmé la réception.',
-              _ => 'Solde insuffisant : réglez par carte ou en espèces.',
+              _ => 'Solde insuffisant pour ce paiement.',
             },
             textAlign: TextAlign.center,
           ),
