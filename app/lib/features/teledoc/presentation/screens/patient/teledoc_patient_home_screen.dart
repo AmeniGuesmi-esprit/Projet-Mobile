@@ -7,6 +7,7 @@ import '../../../../../core/theme/app_spacing.dart';
 import '../../../../../core/widgets/empty_state.dart';
 import '../../../../../core/widgets/service_badge.dart';
 import '../../../domain/teledoc_formatters.dart';
+import '../../../domain/teledoc_history_store.dart';
 import '../../../domain/teledoc_repository.dart';
 import '../../widgets/teledoc_async_view.dart';
 import '../../widgets/teledoc_chips.dart';
@@ -192,6 +193,10 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
             color: AppColors.moduleTeleDoc,
           );
         }
+        final offline = switch (widget.repository) {
+          final TeledocOfflineAware aware => aware.servingCachedHistory,
+          _ => null,
+        };
         return RefreshIndicator(
           color: TeledocColors.brandDeep,
           onRefresh: () async {
@@ -200,10 +205,21 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
           },
           child: ListView.separated(
             padding: const EdgeInsets.all(AppSpacing.md),
-            itemCount: consultations.length,
-            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
-            itemBuilder: (context, i) {
-              final c = consultations[i];
+            itemCount: consultations.length + 1,
+            separatorBuilder: (_, i) =>
+                SizedBox(height: i == 0 ? 0 : AppSpacing.xs),
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return offline == null
+                    ? const SizedBox.shrink()
+                    : ValueListenableBuilder<bool>(
+                        valueListenable: offline,
+                        builder: (context, cached, _) => cached
+                            ? const _OfflineBanner()
+                            : const SizedBox.shrink(),
+                      );
+              }
+              final c = consultations[index - 1];
               return Card(
                 child: ListTile(
                   leading: Icon(
@@ -231,6 +247,43 @@ class _TeledocPatientHomeScreenState extends State<TeledocPatientHomeScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Shown above the history when it comes from the phone's local database.
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Semantics(
+        liveRegion: true,
+        child: Container(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: scheme.secondaryContainer,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.cloud_off_outlined,
+                  color: scheme.onSecondaryContainer),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Mode hors ligne : historique enregistré sur ce téléphone. '
+                  'Tirez vers le bas pour actualiser.',
+                  style: TextStyle(color: scheme.onSecondaryContainer),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

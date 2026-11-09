@@ -4,7 +4,9 @@ import 'package:proxilife_shared/proxilife_shared.dart';
 import '../../../../core/session/session_controller.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/empty_state.dart';
+import '../../data/sqflite_teledoc_history_store.dart';
 import '../../data/teledoc_api_repository.dart';
+import '../../data/teledoc_offline_repository.dart';
 import '../../domain/teledoc_repository.dart';
 import 'doctor/teledoc_doctor_home_screen.dart';
 import 'patient/teledoc_patient_home_screen.dart';
@@ -22,7 +24,16 @@ class TeledocHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final repo = repository ?? TeledocApiRepository(session.api);
+    final user = session.user;
+    final repo = repository ??
+        (user == null
+            ? TeledocApiRepository(session.api)
+            // Consultation history also kept on the phone (D45).
+            : TeledocOfflineRepository(
+                TeledocApiRepository(session.api),
+                SqfliteTeledocHistoryStore.shared,
+                user.id,
+              ));
     return TeledocThemed(
       child: switch (session.user?.role) {
         UserRole.medecin => TeledocDoctorHomeScreen(repository: repo),
