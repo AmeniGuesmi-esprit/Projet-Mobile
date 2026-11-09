@@ -30,9 +30,12 @@ void main() {
     await tester.pump(const Duration(seconds: 11));
   }
 
-  testWidgets('FoodSave, then EcoRoute, then TeleDoc cards', (tester) async {
+  testWidgets('Paiements, FoodSave, EcoRoute, then TeleDoc cards', (
+    tester,
+  ) async {
     await pumpHome(tester, UserRole.client);
 
+    final pay = tester.getTopLeft(find.text('Vos paiements'));
     final food = tester.getTopLeft(
       find.text('Paniers anti-gaspi près de vous'),
     );
@@ -40,22 +43,28 @@ void main() {
     final tele = tester.getTopLeft(
       find.text('Consulter un médecin à distance'),
     );
+    expect(pay.dy, lessThan(food.dy));
     expect(food.dy, lessThan(eco.dy));
     expect(eco.dy, lessThan(tele.dy));
     await disposeHome(tester);
   });
 
-  testWidgets('Cards open the FoodSave and EcoRoute tabs', (tester) async {
+  testWidgets('Cards open the Paiements, FoodSave and EcoRoute tabs', (
+    tester,
+  ) async {
     final opened = await pumpHome(tester, UserRole.client);
 
+    await tester.tap(find.text('Vos paiements'));
     await tester.tap(find.text('Paniers anti-gaspi près de vous'));
     await tester.tap(find.text('Trouver un covoiturage'));
-    expect(opened, ['foodsave', 'covoiturage']);
+    expect(opened, ['payments', 'foodsave', 'covoiturage']);
     await disposeHome(tester);
   });
 
   testWidgets('Merchant and driver get their own wording', (tester) async {
     await pumpHome(tester, UserRole.commercant);
+    expect(find.text('Revenus versés sur votre RIB'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     expect(find.text('Gérer vos paniers anti-gaspi'), findsOneWidget);
     await disposeHome(tester);
 

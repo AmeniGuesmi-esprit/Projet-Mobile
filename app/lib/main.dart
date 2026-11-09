@@ -70,8 +70,9 @@ class _SplashGateState extends State<SplashGate> {
   bool _ready = false;
   bool _wasAuthenticated = false;
 
-  /// Signed out: the landing page comes first; « Se connecter » / « Créer
-  /// un compte » switch to the login screen (back returns here).
+  /// Signed out at app start: the landing page comes first; « Commencer »
+  /// / « Créer un compte » switch to the login screen (back returns here).
+  /// After a logout the login screen is shown directly.
   bool _showLanding = true;
 
   void _openLogin() => setState(() => _showLanding = false);
@@ -121,8 +122,9 @@ class _SplashGateState extends State<SplashGate> {
     } else if (session.status == SessionStatus.unauthenticated &&
         _wasAuthenticated) {
       _wasAuthenticated = false;
-      // Signed out: start again from the landing page.
-      if (mounted) setState(() => _showLanding = true);
+      // Signed out: straight to the login screen (its back arrow still
+      // leads to the landing page).
+      if (mounted) setState(() => _showLanding = false);
       FoodSaveNotificationPoller.instance.stop();
       ServiceNowNotificationPoller.instance.stop();
       CoachNotificationPoller.instance.stop();

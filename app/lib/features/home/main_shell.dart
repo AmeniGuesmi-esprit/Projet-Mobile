@@ -164,13 +164,124 @@ class _MainShellState extends State<MainShell> {
                 KeyedSubtree(key: ValueKey(tab.id), child: tab.page),
             ],
           ),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: index,
-            onDestinationSelected: (i) => _select(tabs, i, index),
+          bottomNavigationBar: _BottomTabBar(
             destinations: [for (final tab in tabs) tab.destination],
+            selectedIndex: index,
+            onSelected: (i) => _select(tabs, i, index),
           ),
         );
       },
+    );
+  }
+}
+
+/// Compact bottom bar for many tabs (8 on a 360 dp phone): every icon on
+/// the same line and every label on a single line, shrunk to fit when
+/// needed (the standard NavigationBar wraps « Paiements » / « ServiceNow »
+/// on two lines, which shifts their icons). Long-press shows the full name.
+class _BottomTabBar extends StatelessWidget {
+  const _BottomTabBar({
+    required this.destinations,
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  final List<NavigationDestination> destinations;
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context).navigationBarTheme;
+    return Material(
+      color: theme.backgroundColor,
+      elevation: 3,
+      shadowColor: Colors.black26,
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 64,
+          child: Row(
+            children: [
+              for (var i = 0; i < destinations.length; i++)
+                Expanded(
+                  child: _BottomTabItem(
+                    destination: destinations[i],
+                    selected: i == selectedIndex,
+                    onTap: () => onSelected(i),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomTabItem extends StatelessWidget {
+  const _BottomTabItem({
+    required this.destination,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final NavigationDestination destination;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context).navigationBarTheme;
+    final states = {if (selected) WidgetState.selected};
+    final labelStyle = theme.labelTextStyle?.resolve(states);
+    final color = labelStyle?.color;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: destination.label,
+      excludeSemantics: true,
+      child: Tooltip(
+        message: destination.label,
+        child: InkResponse(
+          onTap: onTap,
+          containedInkWell: true,
+          highlightShape: BoxShape.rectangle,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 40,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: selected ? theme.indicatorColor : Colors.transparent,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: IconTheme.merge(
+                  data: IconThemeData(size: 22, color: color),
+                  child: selected
+                      ? destination.selectedIcon ?? destination.icon
+                      : destination.icon,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 1),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    destination.label,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: labelStyle,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
