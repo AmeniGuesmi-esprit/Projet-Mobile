@@ -4,6 +4,7 @@ export 'src/dto/reservation_dto.dart';
 export 'src/dto/transaction_dto.dart';
 export 'src/dto/trip_dto.dart';
 export 'src/dto/user_dto.dart';
+export 'src/service_now/service_now.dart';
 export 'src/dto/vehicle_dto.dart';
 export 'src/enums.dart';
 export 'src/foodsave/foodsave_dto.dart';

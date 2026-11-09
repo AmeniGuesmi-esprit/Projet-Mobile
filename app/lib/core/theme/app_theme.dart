@@ -123,12 +123,12 @@ class AppTheme {
         backgroundColor: AppColors.surface,
         indicatorColor: AppColors.primary.withValues(alpha: 0.12),
         labelTextStyle: WidgetStateProperty.resolveWith(
-          // 11 sp with tight spacing: six tabs (Accueil … Profil) fit on a
-          // 360 dp phone without "Paiements" wrapping.
+          // 10 sp with tight spacing: seven tabs (Accueil … Profil) have to
+          // fit, "ServiceNow" being the longest label.
           (states) => TextStyle(
             fontFamily: 'Inter',
-            fontSize: 11,
-            letterSpacing: -0.2,
+            fontSize: 10,
+            letterSpacing: -0.3,
             fontWeight: states.contains(WidgetState.selected)
                 ? FontWeight.w600
                 : FontWeight.w400,

@@ -18,6 +18,7 @@ const _roleLabels = <UserRole, String>{
   UserRole.commercant: 'Commerçant',
   UserRole.medecin: 'Médecin',
   UserRole.coach: 'Coach',
+  UserRole.prestataire: 'Prestataire',
   UserRole.admin: 'Administrateur',
 };
 

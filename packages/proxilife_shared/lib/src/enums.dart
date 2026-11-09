@@ -11,6 +11,7 @@ enum UserRole {
   commercant('commercant'),
   medecin('medecin'),
   coach('coach'),
+  prestataire('prestataire'),
   admin('admin');
 
   const UserRole(this.apiValue);
@@ -25,7 +26,8 @@ enum UserRole {
         UserRole.conducteur ||
         UserRole.commercant ||
         UserRole.medecin ||
-        UserRole.coach =>
+        UserRole.coach ||
+        UserRole.prestataire =>
           true,
         UserRole.client || UserRole.admin => false,
       };

@@ -6,6 +6,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../coach/coach_schema.dart';
 import '../foodsave/foodsave_schema.dart';
+import 'service_now_schema.dart';
 import 'teledoc_schema.dart';
 
 /// Opens (and migrates) the ProxiLife SQLite database.
@@ -18,7 +19,9 @@ import 'teledoc_schema.dart';
 ///  - v5 : reservation (demandes de places sur un trajet)
 ///  - v6 : embarquement (QR code / Bluetooth) sur reservation + secret par trajet
 ///  - v7 : TeleDoc Express (teledoc_schema.dart, migration idempotente)
+///  - v8 : ServiceNow, services à domicile (service_now_schema.dart)
 ///  - v8 : CoachProche (coach_schema.dart, tables créées si absentes)
+///  - v9 : aucune table : relance CoachProche sur les bases déjà en v8
 ///
 /// An existing v1 file is upgraded in place (no data is lost).
 class AppDatabase {
@@ -54,12 +57,16 @@ class AppDatabase {
   /// v5: reservation (demandes de places).
   /// v6: embarquement (QR code / Bluetooth).
   /// v7: TeleDoc Express.
+  /// v8: ServiceNow (demande_service, intervention).
   /// v8: CoachProche.
-  static const int schemaVersion = 8;
+  /// v9: makes sure databases already at v8 receive every v8 module.
+  static const int schemaVersion = 9;
 
   static OpenDatabaseOptions _options() => OpenDatabaseOptions(
         version: schemaVersion,
         onConfigure: _enableForeignKeys,
+        // Idempotent: adds any ServiceNow table or column that is missing.
+        onOpen: (db) => createServiceNowSchema(db),
         onCreate: (db, version) async {
           // _createSchemaV1 crée aussi les tables FoodSave (dernière version).
           await _createSchemaV1(db);
@@ -67,6 +74,7 @@ class AppDatabase {
           await _migrateToV3(db); // réservations (v5 de la base)
           await _migrateToV4(db); // embarquement (v6 de la base)
           await createTeledocSchema(db); // TeleDoc (v7 de la base)
+          await createServiceNowSchema(db); // ServiceNow (v8 de la base)
           await createCoachSchema(db); // CoachProche (v8 de la base)
         },
         onUpgrade: (db, oldVersion, newVersion) async {
@@ -86,8 +94,10 @@ class AppDatabase {
           if (oldVersion < 7) {
             await upgradeTeledocSchema(db, oldVersion, newVersion);
           }
+          // ServiceNow : idempotent.
+          if (oldVersion < 8) await createServiceNowSchema(db);
           // CoachProche : CREATE TABLE IF NOT EXISTS, sans risque.
-          if (oldVersion < 8) await createCoachSchema(db);
+          if (oldVersion < 9) await createCoachSchema(db);
         },
       );
 

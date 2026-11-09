@@ -15,6 +15,7 @@ const _selectableRoles = <UserRole, String>{
   UserRole.commercant: 'Commerçant',
   UserRole.medecin: 'Médecin',
   UserRole.coach: 'Coach',
+  UserRole.prestataire: 'Prestataire',
 };
 
 class RegisterScreen extends StatefulWidget {
