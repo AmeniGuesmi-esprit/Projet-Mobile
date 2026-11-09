@@ -5,19 +5,38 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/widgets/service_badge.dart';
 
-/// Home-screen shortcut to a service (same look as the TeleDoc card):
-/// tinted icon, service badge, title, subtitle and a chevron.
+/// Home-screen shortcut (same look as the TeleDoc card): tinted icon,
+/// badge, title, subtitle and a chevron.
 class ServiceEntryCard extends StatelessWidget {
+  /// Card for a service module: badge, colour from [ServiceMeta].
   const ServiceEntryCard({
     super.key,
-    required this.type,
+    required ServiceType this.type,
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
-  });
+  }) : label = null,
+       color = null,
+       badgeIcon = null;
 
-  final ServiceType type;
+  /// Card for something that is not a service module (e.g. Paiements):
+  /// the badge is drawn with [label], [badgeIcon] and [color].
+  const ServiceEntryCard.custom({
+    super.key,
+    required String this.label,
+    required IconData this.badgeIcon,
+    required Color this.color,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  }) : type = null;
+
+  final ServiceType? type;
+  final String? label;
+  final IconData? badgeIcon;
+  final Color? color;
   final IconData icon;
   final String title;
   final String subtitle;
@@ -26,7 +45,8 @@ class ServiceEntryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = ServiceMeta.of(type).color;
+    final type = this.type;
+    final color = type != null ? ServiceMeta.of(type).color : this.color!;
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.md),
       child: Card(
@@ -51,7 +71,10 @@ class ServiceEntryCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ServiceBadge(type, compact: true),
+                      if (type != null)
+                        ServiceBadge(type, compact: true)
+                      else
+                        _Badge(label: label!, icon: badgeIcon!, color: color),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(title, style: theme.textTheme.titleMedium),
                       Text(subtitle, style: theme.textTheme.bodySmall),
@@ -63,6 +86,45 @@ class ServiceEntryCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Same pill as a compact [ServiceBadge], for a non-service card.
+class _Badge extends StatelessWidget {
+  const _Badge({required this.label, required this.icon, required this.color});
+
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: 4,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }

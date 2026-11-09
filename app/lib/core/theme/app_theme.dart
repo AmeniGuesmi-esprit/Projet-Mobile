@@ -123,8 +123,9 @@ class AppTheme {
         backgroundColor: AppColors.surface,
         indicatorColor: AppColors.primary.withValues(alpha: 0.12),
         labelTextStyle: WidgetStateProperty.resolveWith(
-          // 10 sp with tight spacing: seven tabs (Accueil … Profil) have to
-          // fit, "ServiceNow" being the longest label.
+          // 10 sp with tight spacing: eight tabs (Accueil … Profil) have to
+          // fit; labels stay on one line (shrunk if needed, see
+          // _BottomTabBar in main_shell.dart).
           (states) => TextStyle(
             fontFamily: 'Inter',
             fontSize: 10,
