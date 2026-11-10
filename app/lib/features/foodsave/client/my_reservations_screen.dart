@@ -8,6 +8,10 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../data/foodsave_api.dart';
+import '../data/offline_reservations.dart';
+import '../data/reservation_cache.dart';
+import '../data/sqflite_reservation_cache.dart';
+import '../widgets/offline_banner.dart';
 import '../widgets/foodsave_ui.dart';
 import 'booking/booking_format.dart';
 import 'booking/reservation_card.dart';
@@ -15,18 +19,23 @@ import 'reservation_qr_screen.dart';
 import '../../../core/live/live_refresh.dart';
 
 /// The client's FoodSave reservations: "En cours" (to pick up) and
-/// "Historique" (picked up, expired, cancelled).
+/// "Historique" (picked up, expired, cancelled). The list is also saved on
+/// the phone (sqflite) and shown from there when the server is unreachable.
 class MyReservationsScreen extends StatefulWidget {
   const MyReservationsScreen({
     super.key,
     required this.session,
     this.clock = systemClock,
+    this.cache,
   });
 
   final SessionController session;
 
   /// Injectable time source (tests).
   final BookingClock clock;
+
+  /// Local copy of the reservations; defaults to the phone's sqflite store.
+  final FoodSaveReservationCache? cache;
 
   @override
   State<MyReservationsScreen> createState() => _MyReservationsScreenState();
@@ -35,6 +44,11 @@ class MyReservationsScreen extends StatefulWidget {
 class _MyReservationsScreenState extends State<MyReservationsScreen>
     with LiveRefresh<MyReservationsScreen> {
   late final FoodSaveApi _api = FoodSaveApi(widget.session.api);
+  late final FoodSaveOfflineReservations _repo = FoodSaveOfflineReservations(
+    _api,
+    widget.cache ?? SqfliteReservationCache.shared,
+    widget.session.user?.id,
+  );
   late final ValueNotifier<DateTime> _now = ValueNotifier(widget.clock());
   late Future<List<ReservationDto>> _future;
   Timer? _ticker;
@@ -53,11 +67,12 @@ class _MyReservationsScreenState extends State<MyReservationsScreen>
   void dispose() {
     _ticker?.cancel();
     _now.dispose();
+    _repo.dispose();
     super.dispose();
   }
 
   Future<List<ReservationDto>> _fetch() async {
-    final items = await _api.myReservations();
+    final items = await _repo.myReservations();
     _items = items;
     return items;
   }
@@ -101,13 +116,15 @@ class _MyReservationsScreenState extends State<MyReservationsScreen>
   }
 
   Future<void> _open(ReservationDto r) async {
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => ReservationQrScreen(
-        session: widget.session,
-        reservationId: r.id,
-        clock: widget.clock,
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReservationQrScreen(
+          session: widget.session,
+          reservationId: r.id,
+          clock: widget.clock,
+        ),
       ),
-    ));
+    );
     if (mounted) unawaited(_reload());
   }
 
@@ -130,48 +147,69 @@ class _MyReservationsScreenState extends State<MyReservationsScreen>
             ],
           ),
         ),
-        body: FutureBuilder<List<ReservationDto>>(
-          future: _future,
-          builder: (context, snapshot) {
-            final Widget child;
-            if (!snapshot.hasData && !snapshot.hasError) {
-              child = const BasketListSkeleton(key: ValueKey('loading'));
-            } else if (snapshot.hasError && !snapshot.hasData) {
-              child = FoodSaveErrorView(
-                  key: const ValueKey('error'),
-                  error: snapshot.error,
-                  onRetry: _reload);
-            } else {
-              final all = snapshot.data!;
-              final active = all.where(isActiveReservation).toList()
-                ..sort((a, b) {
-                  final ea = a.dateExpirationQr, eb = b.dateExpirationQr;
-                  if (ea == null || eb == null) return 0;
-                  return ea.compareTo(eb);
-                });
-              final history =
-                  all.where((r) => !isActiveReservation(r)).toList();
-              child = TabBarView(
-                key: const ValueKey('content'),
-                children: [
-                  _list(context, active, activeTab: true),
-                  _list(context, history, activeTab: false),
-                ],
-              );
-            }
-            return AnimatedSwitcher(
-              duration: reduceMotion ? Duration.zero : FoodSaveMotion.medium,
-              switchInCurve: FoodSaveMotion.curve,
-              child: child,
-            );
-          },
+        body: Column(
+          children: [
+            ValueListenableBuilder<bool>(
+              valueListenable: _repo.offline,
+              builder: (context, offline, _) => offline
+                  ? const FoodSaveOfflineBanner(
+                      message:
+                          'Mode hors ligne : réservations enregistrées '
+                          'sur ce téléphone. Votre QR code reste utilisable. '
+                          'Tirez vers le bas pour actualiser.',
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            Expanded(child: _body(context, reduceMotion)),
+          ],
         ),
       ),
     );
   }
 
-  Widget _list(BuildContext context, List<ReservationDto> items,
-      {required bool activeTab}) {
+  Widget _body(BuildContext context, bool reduceMotion) =>
+      FutureBuilder<List<ReservationDto>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final Widget child;
+          if (!snapshot.hasData && !snapshot.hasError) {
+            child = const BasketListSkeleton(key: ValueKey('loading'));
+          } else if (snapshot.hasError && !snapshot.hasData) {
+            child = FoodSaveErrorView(
+              key: const ValueKey('error'),
+              error: snapshot.error,
+              onRetry: _reload,
+            );
+          } else {
+            final all = snapshot.data!;
+            final active = all.where(isActiveReservation).toList()
+              ..sort((a, b) {
+                final ea = a.dateExpirationQr, eb = b.dateExpirationQr;
+                if (ea == null || eb == null) return 0;
+                return ea.compareTo(eb);
+              });
+            final history = all.where((r) => !isActiveReservation(r)).toList();
+            child = TabBarView(
+              key: const ValueKey('content'),
+              children: [
+                _list(context, active, activeTab: true),
+                _list(context, history, activeTab: false),
+              ],
+            );
+          }
+          return AnimatedSwitcher(
+            duration: reduceMotion ? Duration.zero : FoodSaveMotion.medium,
+            switchInCurve: FoodSaveMotion.curve,
+            child: child,
+          );
+        },
+      );
+
+  Widget _list(
+    BuildContext context,
+    List<ReservationDto> items, {
+    required bool activeTab,
+  }) {
     if (items.isEmpty) {
       return RefreshIndicator(
         color: AppColors.moduleFoodSaveDeep,
@@ -186,9 +224,7 @@ class _MyReservationsScreenState extends State<MyReservationsScreen>
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     EmptyState(
-                      icon: activeTab
-                          ? Icons.qr_code_2
-                          : Icons.history_rounded,
+                      icon: activeTab ? Icons.qr_code_2 : Icons.history_rounded,
                       color: AppColors.moduleFoodSave,
                       title: activeTab
                           ? 'Aucune réservation en cours'
@@ -199,7 +235,8 @@ class _MyReservationsScreenState extends State<MyReservationsScreen>
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.xxl),
+                        horizontal: AppSpacing.xxl,
+                      ),
                       child: FilledButton.icon(
                         style: foodSaveFilledStyle(),
                         onPressed: () => Navigator.of(context).maybePop(),

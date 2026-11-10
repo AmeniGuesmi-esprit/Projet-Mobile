@@ -9,6 +9,10 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/widgets/money_text.dart';
 import '../data/foodsave_api.dart';
+import '../data/offline_reservations.dart';
+import '../data/reservation_cache.dart';
+import '../data/sqflite_reservation_cache.dart';
+import '../widgets/offline_banner.dart';
 import '../widgets/foodsave_ui.dart';
 import 'booking/booking_format.dart';
 import 'booking/qr_panels.dart';
@@ -23,10 +27,15 @@ class ReservationQrScreen extends StatefulWidget {
     required this.reservationId,
     this.clock = systemClock,
     this.pollInterval = const Duration(seconds: 15),
+    this.cache,
   });
 
   final SessionController session;
   final int reservationId;
+
+  /// Local copy of the reservations; defaults to the phone's sqflite store,
+  /// so the QR code can be shown at the shop without network.
+  final FoodSaveReservationCache? cache;
 
   /// Injectable time source (tests).
   final BookingClock clock;
@@ -38,6 +47,11 @@ class ReservationQrScreen extends StatefulWidget {
 
 class _ReservationQrScreenState extends State<ReservationQrScreen> {
   late final FoodSaveApi _api = FoodSaveApi(widget.session.api);
+  late final FoodSaveOfflineReservations _repo = FoodSaveOfflineReservations(
+    _api,
+    widget.cache ?? SqfliteReservationCache.shared,
+    widget.session.user?.id,
+  );
   late final ValueNotifier<DateTime> _now = ValueNotifier(widget.clock());
   Timer? _ticker;
 
@@ -63,6 +77,7 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
   void dispose() {
     _ticker?.cancel();
     _now.dispose();
+    _repo.dispose();
     super.dispose();
   }
 
@@ -77,7 +92,7 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
       });
     }
     try {
-      final r = await _api.getReservation(widget.reservationId);
+      final r = await _repo.reservation(widget.reservationId);
       if (!mounted) return;
       setState(() => _apply(r));
     } catch (e) {
@@ -118,7 +133,8 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
       _load(silent: true);
       return;
     }
-    final watching = phase == QrPhase.active || phase == QrPhase.awaitingPayment;
+    final watching =
+        phase == QrPhase.active || phase == QrPhase.awaitingPayment;
     if (watching && now.difference(_lastPoll) >= widget.pollInterval) {
       _load(silent: true);
     }
@@ -130,7 +146,8 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Annuler la réservation ?'),
         content: const Text(
-            'Le panier sera remis en vente. Si vous avez payé, le montant vous sera remboursé.'),
+          'Le panier sera remis en vente. Si vous avez payé, le montant vous sera remboursé.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -138,8 +155,9 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-                backgroundColor: AppColors.error,
-                foregroundColor: Colors.white),
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Annuler la réservation'),
           ),
@@ -149,7 +167,7 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
     if (confirmed != true || !mounted) return;
     setState(() => _cancelling = true);
     try {
-      final r = await _api.cancelReservation(widget.reservationId);
+      final r = await _repo.cancel(widget.reservationId);
       if (!mounted) return;
       setState(() {
         _apply(r);
@@ -157,15 +175,21 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
       });
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(
-          content: Text(r.statutPaiement == TransactionStatus.rembourse &&
-                  !isCashReservation(r)
-              ? 'Réservation annulée : vous avez été remboursé.'
-              : 'Réservation annulée.'),
-        ));
-      unawaited(widget.session.refreshUser().catchError((Object e) {
-        developer.log('Balance refresh failed: $e', name: 'foodsave');
-      }));
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              r.statutPaiement == TransactionStatus.rembourse &&
+                      !isCashReservation(r)
+                  ? 'Réservation annulée : vous avez été remboursé.'
+                  : 'Réservation annulée.',
+            ),
+          ),
+        );
+      unawaited(
+        widget.session.refreshUser().catchError((Object e) {
+          developer.log('Balance refresh failed: $e', name: 'foodsave');
+        }),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _cancelling = false);
@@ -182,7 +206,10 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
       body = const _QrSkeleton(key: ValueKey('loading'));
     } else if (r == null) {
       body = FoodSaveErrorView(
-          key: const ValueKey('error'), error: _loadError, onRetry: _load);
+        key: const ValueKey('error'),
+        error: _loadError,
+        onRetry: _load,
+      );
     } else {
       body = _content(context, r);
     }
@@ -220,10 +247,24 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(
-            AppSpacing.md, AppSpacing.xs, AppSpacing.md, AppSpacing.xl),
+          AppSpacing.md,
+          AppSpacing.xs,
+          AppSpacing.md,
+          AppSpacing.xl,
+        ),
         children: [
-          Text(basket?.titre ?? 'Panier anti-gaspillage',
-              style: theme.textTheme.headlineMedium),
+          if (_repo.offline.value) ...[
+            const FoodSaveOfflineBanner(
+              message:
+                  'Mode hors ligne : QR code enregistré sur ce '
+                  'téléphone. Le commerçant peut le scanner normalement.',
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+          Text(
+            basket?.titre ?? 'Panier anti-gaspillage',
+            style: theme.textTheme.headlineMedium,
+          ),
           const SizedBox(height: AppSpacing.xxs),
           Wrap(
             spacing: AppSpacing.xs,
@@ -231,15 +272,21 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               if (store != null)
-                Text(store.nom,
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(color: AppColors.moduleFoodSaveDeep)),
+                Text(
+                  store.nom,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: AppColors.moduleFoodSaveDeep,
+                  ),
+                ),
               // The active ticket already shows the reference.
               if (phase != QrPhase.active || token == null)
-                Text(reservationRef(r.id),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                        color: AppColors.textSecondaryStrong,
-                        fontWeight: FontWeight.w600)),
+                Text(
+                  reservationRef(r.id),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textSecondaryStrong,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: AppSpacing.md),
@@ -250,14 +297,17 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
             transitionBuilder: (child, a) => FadeTransition(
               opacity: a,
               child: ScaleTransition(
-                  scale: Tween(begin: 0.96, end: 1.0).animate(a), child: child),
+                scale: Tween(begin: 0.96, end: 1.0).animate(a),
+                child: child,
+              ),
             ),
             child: panel,
           ),
           const SizedBox(height: AppSpacing.md),
           _DetailsCard(reservation: r, basket: basket),
           if (r.statut == ReservationStatus.enAttente &&
-              phase != QrPhase.expired) ...[
+              phase != QrPhase.expired &&
+              !_repo.offline.value) ...[
             const SizedBox(height: AppSpacing.lg),
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
@@ -269,7 +319,8 @@ class _ReservationQrScreenState extends State<ReservationQrScreen> {
               icon: _cancelling
                   ? const SizedBox.square(
                       dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.close),
               label: const Text('Annuler la réservation'),
             ),
@@ -294,27 +345,32 @@ class _DetailsCard extends StatelessWidget {
     final store = b?.commerce;
     final mode = r.modePaiement;
     Widget row(IconData icon, String label, Widget value) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, size: 20, color: AppColors.moduleFoodSaveDeep),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondaryStrong)),
-                    DefaultTextStyle.merge(
-                        style: theme.textTheme.bodyLarge, child: value),
-                  ],
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: AppColors.moduleFoodSaveDeep),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondaryStrong,
+                  ),
                 ),
-              ),
-            ],
+                DefaultTextStyle.merge(
+                  style: theme.textTheme.bodyLarge,
+                  child: value,
+                ),
+              ],
+            ),
           ),
-        );
+        ],
+      ),
+    );
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
@@ -326,24 +382,39 @@ class _DetailsCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (store != null)
-            row(Icons.storefront_outlined, 'Commerce',
-                Text('${store.nom}\n${store.adresse}')),
+            row(
+              Icons.storefront_outlined,
+              'Commerce',
+              Text('${store.nom}\n${store.adresse}'),
+            ),
           if (b != null)
             row(
-                Icons.schedule,
-                'Créneau de retrait',
-                Text(pickupWindowFr(b.creneauRetraitDebut, b.creneauRetraitFin)
-                    .replaceFirst('Retrait ', ''))),
-          row(Icons.shopping_basket_outlined, 'Quantité',
-              Text(basketsCount(r.quantiteReservee))),
+              Icons.schedule,
+              'Créneau de retrait',
+              Text(
+                pickupWindowFr(
+                  b.creneauRetraitDebut,
+                  b.creneauRetraitFin,
+                ).replaceFirst('Retrait ', ''),
+              ),
+            ),
           row(
-              Icons.receipt_long_outlined,
-              isCashReservation(r) && r.statut == ReservationStatus.enAttente
-                  ? 'À payer en espèces au retrait'
-                  : 'Montant',
-              MoneyText(r.montantCentimes,
-                  style: theme.textTheme.bodyLarge
-                      ?.copyWith(fontWeight: FontWeight.w700))),
+            Icons.shopping_basket_outlined,
+            'Quantité',
+            Text(basketsCount(r.quantiteReservee)),
+          ),
+          row(
+            Icons.receipt_long_outlined,
+            isCashReservation(r) && r.statut == ReservationStatus.enAttente
+                ? 'À payer en espèces au retrait'
+                : 'Montant',
+            MoneyText(
+              r.montantCentimes,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
           const SizedBox(height: AppSpacing.xs),
           Wrap(
             spacing: AppSpacing.xs,
@@ -353,11 +424,15 @@ class _DetailsCard extends StatelessWidget {
               ReservationPaymentChip(r, cashLabel: 'Paiement au retrait'),
               if (mode != null)
                 Chip(
-                  avatar: Icon(paymentTypeIcon(mode),
-                      size: 16, color: AppColors.textSecondaryStrong),
+                  avatar: Icon(
+                    paymentTypeIcon(mode),
+                    size: 16,
+                    color: AppColors.textSecondaryStrong,
+                  ),
                   label: Text(paymentTypeLabel(mode)),
-                  labelStyle: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppColors.textSecondaryStrong),
+                  labelStyle: theme.textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondaryStrong,
+                  ),
                   visualDensity: VisualDensity.compact,
                   side: const BorderSide(color: AppColors.outline),
                   backgroundColor: AppColors.surface,
@@ -375,16 +450,16 @@ class _QrSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListView(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(AppSpacing.md),
-        children: const [
-          SkeletonBox(height: 28, width: 220),
-          SizedBox(height: AppSpacing.xs),
-          SkeletonBox(height: 18, width: 160),
-          SizedBox(height: AppSpacing.md),
-          SkeletonBox(height: 360, radius: AppRadius.lg),
-          SizedBox(height: AppSpacing.md),
-          SkeletonBox(height: 180, radius: AppRadius.lg),
-        ],
-      );
+    physics: const NeverScrollableScrollPhysics(),
+    padding: const EdgeInsets.all(AppSpacing.md),
+    children: const [
+      SkeletonBox(height: 28, width: 220),
+      SizedBox(height: AppSpacing.xs),
+      SkeletonBox(height: 18, width: 160),
+      SizedBox(height: AppSpacing.md),
+      SkeletonBox(height: 360, radius: AppRadius.lg),
+      SizedBox(height: AppSpacing.md),
+      SkeletonBox(height: 180, radius: AppRadius.lg),
+    ],
+  );
 }
