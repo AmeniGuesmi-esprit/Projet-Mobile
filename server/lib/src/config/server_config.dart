@@ -13,6 +13,8 @@ class ServerConfig {
     required this.emailConsoleMode,
     required this.dbPath,
     required this.port,
+    this.llmApiKey = '',
+    this.llmModel = 'openai/gpt-oss-120b',
   });
 
   final String smtpHost;
@@ -22,6 +24,8 @@ class ServerConfig {
   final bool emailConsoleMode;
   final String dbPath;
   final int port;
+  final String llmApiKey;
+  final String llmModel;
 
   static Future<ServerConfig> load({String? envPath}) async {
     final fileEnv = await _readEnvFile(envPath ?? '.env');
@@ -42,6 +46,8 @@ class ServerConfig {
       emailConsoleMode: rawMode != 'smtp',
       dbPath: p.normalize(pick('DB_PATH', './proxi_life.db')),
       port: int.tryParse(pick('SERVER_PORT', '8080')) ?? 8080,
+      llmApiKey: pick('LLM_API_KEY', ''),
+      llmModel: pick('LLM_MODEL', 'openai/gpt-oss-120b'),
     );
   }
 

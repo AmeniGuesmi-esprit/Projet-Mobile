@@ -206,6 +206,88 @@ void main() {
     });
   });
 
+  group('wallet top-up', () {
+    Future<String> addCard(String token) async {
+      final (status, json) = await ts.call('POST', '/payment-methods',
+          token: token,
+          body: {
+            'type': 'carte_bancaire',
+            'numero_carte': validCard,
+            'nom_titulaire': 'JOHN DOE',
+            'date_expiration': '10/29',
+          });
+      expect(status, 201);
+      return json['id'].toString();
+    }
+
+    test('credits the wallet from a registered card; balance is visible',
+        () async {
+      final (token, userId) = await ts.registerLogin(email: 'topup@test.fr');
+      final cardId = await addCard(token);
+
+      final (status, json) = await ts.call('POST', '/wallet/topup',
+          token: token,
+          body: {'montant_centimes': 2500, 'id_moyen_paiement': int.parse(cardId)});
+      expect(status, 200);
+      expect(json['solde_centimes'], 2500);
+      expect(await ts.soldeOf(userId), 2500);
+
+      final (meStatus, me) = await ts.call('GET', '/users/me', token: token);
+      expect(meStatus, 200);
+      expect(me['solde_centimes'], 2500);
+    });
+
+    test('refuses wallet/cash methods, foreign cards, expired cards, bad amounts',
+        () async {
+      final (token, _) = await ts.registerLogin(email: 'topup2@test.fr');
+      final cardId = await addCard(token);
+
+      // Wallet and cash methods are not cards.
+      var (status, wallet) = await ts.call('POST', '/payment-methods',
+          token: token, body: {'type': 'portefeuille'});
+      expect(status, 201);
+      expect(
+          (await ts.call('POST', '/wallet/topup', token: token, body: {
+            'montant_centimes': 1000,
+            'id_moyen_paiement': wallet['id'],
+          })).$1,
+          400);
+
+      // Someone else's card.
+      final (otherToken, _) =
+          await ts.registerLogin(email: 'topup3@test.fr');
+      expect(
+          (await ts.call('POST', '/wallet/topup', token: otherToken, body: {
+            'montant_centimes': 1000,
+            'id_moyen_paiement': int.parse(cardId),
+          })).$1,
+          404);
+
+      // Expired card (expiry edited in DB; cards can't be added expired).
+      final meId = (await ts.call('GET', '/users/me', token: token))
+          .$2['id'] as int;
+      await ts._db.db.update('moyen_paiement',
+          {'date_expiration': '01/20'},
+          where: 'id = ?', whereArgs: [int.parse(cardId)]);
+      final (expiredStatus, expiredBody) =
+          await ts.call('POST', '/wallet/topup', token: token, body: {
+        'montant_centimes': 1000,
+        'id_moyen_paiement': int.parse(cardId),
+      });
+      expect(expiredStatus, 400);
+      expect(expiredBody['error'], contains('expirée'));
+      expect(await ts.soldeOf(meId), 0); // nothing moved
+
+      // Invalid amount.
+      expect(
+          (await ts.call('POST', '/wallet/topup', token: token, body: {
+            'montant_centimes': 0,
+            'id_moyen_paiement': int.parse(cardId),
+          })).$1,
+          400);
+    });
+  });
+
   group('transactions', () {
     Future<(String payerToken, int payerId, int proId)> base() async {
       final p = await ts.registerLogin(email: 'payer@test.fr', solde: 5000);

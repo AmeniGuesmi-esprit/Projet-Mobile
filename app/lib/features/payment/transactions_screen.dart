@@ -9,7 +9,9 @@ import '../../core/widgets/service_badge.dart';
 import '../../core/widgets/status_chip.dart';
 import '../../core/widgets/money_text.dart';
 import 'payment_api.dart';
+import 'payment_assistant_sheet.dart';
 import 'payment_methods_screen.dart';
+import 'top_up_sheet.dart';
 import 'payment_stats_screen.dart';
 import 'transaction_detail_screen.dart';
 import 'widgets/direction_badge.dart';
@@ -83,6 +85,29 @@ class TransactionsScreenState extends State<TransactionsScreen>
                     Expanded(
                       child: Text('Paiements',
                           style: theme.textTheme.headlineMedium),
+                    ),
+                    IconButton(
+                      tooltip: 'Assistant paiements',
+                      icon: const Icon(Icons.auto_awesome_outlined,
+                          color: AppColors.primary),
+                      onPressed: () =>
+                          PaymentAssistantSheet.show(context, widget.api),
+                    ),
+                    IconButton(
+                      tooltip: 'Recharger mon solde',
+                      icon: const Icon(Icons.add_card_outlined,
+                          color: AppColors.primary),
+                      onPressed: () async {
+                        final cents =
+                            await TopUpSheet.show(context, api: widget.api);
+                        if (cents == null || !context.mounted) return;
+                        await widget.refreshUser?.call();
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(
+                              'Solde rechargé de ${MoneyText.format(cents)}'),
+                        ));
+                      },
                     ),
                     IconButton(
                       tooltip: 'Statistiques',

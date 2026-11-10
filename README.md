@@ -62,6 +62,19 @@ flutter run -d emulator-5554
 `dart run bin/seed.dart` peut être relancé : il remet les mots de passe, les
 soldes et les rôles des comptes de démo à leur valeur initiale.
 
+### Assistant paiements (optionnel)
+
+L'onglet Paiements propose un assistant (LLM Groq) qui répond uniquement aux
+questions sur vos paiements (« Combien ai-je dépensé aujourd'hui ? »…). Il
+fonctionne dès qu'une clé Groq est présente dans `server/.env` (jamais
+commitée) :
+
+```
+LLM_API_KEY=gsk_...   # https://console.groq.com/keys
+```
+
+Sans clé, l'icône de l'assistant renvoie simplement « Assistant indisponible ».
+
 ### Si le port 8080 est déjà pris
 
 Lancer le serveur sur un autre port et l'indiquer à l'app :

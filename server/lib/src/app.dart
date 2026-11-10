@@ -28,6 +28,7 @@ import 'routes/teledoc_routes.dart';
 import 'routes/trip_routes.dart';
 import 'routes/user_routes.dart';
 import 'services/auth_service.dart';
+import 'services/payment_assistant_service.dart';
 import 'services/payment_service.dart';
 import 'services/reservation_service.dart';
 import 'services/service_now_geocoder.dart';
@@ -60,11 +61,19 @@ Handler buildApp(
     sessions: sessions,
     email: sender,
   );
+  final transactions = TransactionRepository(database.db);
   final payments = PaymentService(
     db: database.db,
     users: users,
     methods: PaymentMethodRepository(database.db),
-    transactions: TransactionRepository(database.db),
+    transactions: transactions,
+  );
+  final assistant = PaymentAssistantService(
+    transactions: transactions,
+    users: users,
+    gateway: config.llmApiKey.isEmpty
+        ? null
+        : GroqChatGateway(apiKey: config.llmApiKey, model: config.llmModel),
   );
   final trips = TripService(
     vehicles: VehicleRepository(database.db),
@@ -112,7 +121,7 @@ Handler buildApp(
     ..post('/auth/logout',
         (Request request) => handleLogout(request, auth))
     ..mount('/', buildUserRoutes(users, auth).call)
-    ..mount('/', buildPaymentRoutes(payments).call)
+    ..mount('/', buildPaymentRoutes(payments, assistant: assistant).call)
     ..mount('/', buildFoodSaveRouter(foodSaveContext).call)
     ..mount('/', buildTripRoutes(trips).call)
     ..mount('/', buildReservationRoutes(reservations).call)

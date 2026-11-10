@@ -132,6 +132,40 @@ class PaymentService {
   }
 
   // -------------------------------------------------------------------------
+  // Wallet top-up
+  // -------------------------------------------------------------------------
+
+  /// Tops up the internal wallet from an already-registered bank card
+  /// (simulated charge — the card was validated when added). Credits
+  /// [montantCentimes] atomically and returns the new balance. A top-up is a
+  /// deposit, not a payment: no transaction row is created.
+  Future<int> topUp(
+    int utilisateurId, {
+    required int montantCentimes,
+    required int moyenPaiementId,
+  }) async {
+    if (!isValidAmountCents(montantCentimes)) {
+      throw ApiError.badRequest('Montant invalide');
+    }
+    final row = await methods.findById(moyenPaiementId);
+    if (row == null || row['utilisateur_id'] != utilisateurId) {
+      throw ApiError.notFound('Moyen de paiement introuvable');
+    }
+    if (PaymentMethodType.parse(row['type'] as String) !=
+        PaymentMethodType.carteBancaire) {
+      throw ApiError.badRequest('La recharge nécessite une carte bancaire');
+    }
+    final expiry = row['date_expiration'] as String?;
+    if (expiry == null || !isValidCardExpiry(expiry)) {
+      throw ApiError.badRequest('La carte sélectionnée est expirée');
+    }
+    await _db.transaction((txn) async {
+      await users.addSolde(txn, utilisateurId, montantCentimes);
+    });
+    return users.soldeOfId(_db, utilisateurId);
+  }
+
+  // -------------------------------------------------------------------------
   // Transactions
   // -------------------------------------------------------------------------
 

@@ -85,6 +85,27 @@ class PaymentApi {
   }
 
   Future<void> cancel(int id) => _client.deleteJson('/transactions/$id');
+
+  /// Top up the wallet from a registered bank card (simulated charge);
+  /// returns the new balance in cents.
+  Future<int> topUp({
+    required int montantCentimes,
+    required int idMoyenPaiement,
+  }) async {
+    final data = await _client.postJson('/wallet/topup', {
+      'montant_centimes': montantCentimes,
+      'id_moyen_paiement': idMoyenPaiement,
+    });
+    return data['solde_centimes'] as int;
+  }
+
+  /// « Assistant paiements »: LLM-backed answers about the user's own
+  /// payments only (the server holds the API key and the scope rules).
+  Future<String> askAssistant(String question) async {
+    final data = await _client.postJson(
+        '/assistant/ask', {'question': question}, ApiClient.passwordTimeout);
+    return data['reponse'] as String;
+  }
 }
 
 /// Parses a French-style amount field ("12,50" / "12.50" / "12") to cents.

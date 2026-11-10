@@ -5,10 +5,13 @@ import 'package:shelf_router/shelf_router.dart';
 import '../api_error.dart';
 import '../auth/auth_middleware.dart';
 import '../http_helpers.dart';
+import '../services/payment_assistant_service.dart';
 import '../services/payment_service.dart';
 
 /// Payment method + transaction routes (mounted behind [requireAuth]).
-Router buildPaymentRoutes(PaymentService payments) {
+/// [assistant] powers the « Assistant paiements » chat.
+Router buildPaymentRoutes(PaymentService payments,
+    {PaymentAssistantService? assistant}) {
   final router = Router();
 
   // ---- Moyens de paiement ----
@@ -61,6 +64,23 @@ Router buildPaymentRoutes(PaymentService payments) {
     return guard(() async {
       await payments.deleteMethod(request.userId, int.parse(id));
       return Response(204);
+    });
+  });
+
+  // ---- Recharge du portefeuille ----
+
+  router.post('/wallet/topup', (Request request) {
+    return guard(() async {
+      final body = await readJsonBody(request);
+      final montant = body['montant_centimes'];
+      final methodId = body['id_moyen_paiement'];
+      if (montant is! int || methodId is! int) {
+        throw ApiError.badRequest(
+            'montant_centimes et id_moyen_paiement (entiers) requis');
+      }
+      final solde = await payments.topUp(request.userId,
+          montantCentimes: montant, moyenPaiementId: methodId);
+      return jsonResponse({'solde_centimes': solde});
     });
   });
 
@@ -132,6 +152,20 @@ Router buildPaymentRoutes(PaymentService payments) {
             'Statuts acceptés ici : paye (confirmation) ou rembourse'),
       };
       return jsonResponse(dto.toJson());
+    });
+  });
+
+  // ---- Assistant paiements (LLM, périmètre restreint) ----
+
+  router.post('/assistant/ask', (Request request) {
+    return guard(() async {
+      if (assistant == null) {
+        throw ApiError(503, GroqGateway.unavailableMessage);
+      }
+      final body = await readJsonBody(request);
+      final reply =
+          await assistant.ask(request.userId, body['question'] as String? ?? '');
+      return jsonResponse({'reponse': reply});
     });
   });
 

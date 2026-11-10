@@ -21,6 +21,8 @@ Future<void> main(List<String> args) async {
   stdout.writeln('DB       : ${config.dbPath}');
   stdout.writeln(
       'E-mail   : ${config.emailConsoleMode ? 'console (offline)' : 'smtp'}');
+  stdout.writeln(
+      'LLM      : ${config.llmApiKey.isEmpty ? 'non configuré (assistant paiements désactivé)' : 'configuré (${config.llmModel})'}');
 
   final database = await AppDatabase.open(config.dbPath);
   final users = UserRepository(database.db);
